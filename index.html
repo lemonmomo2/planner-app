@@ -165,7 +165,8 @@ const SUPABASE_ANON_KEY = 'sb_publishable_9tqj94C_usEbC_f-s4LwwA_NiSjM6lG';
 
 const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-const TODAY = new Date(2026, 3, 7);
+const now = new Date();
+const TODAY = new Date(now.getFullYear(), now.getMonth(), now.getDate());
 
 const HABITS = [
   {id:'book',  label:'📚 本',    note:'週2回', fill:'book-f', dot:'book-d', color:'#2a7a3a'},
@@ -346,10 +347,9 @@ function renderAuth(){
       <label style="display:block;font-size:12px;margin-bottom:6px;">パスワード</label>
       <input id="password" type="password" style="width:100%;padding:10px;border:1px solid #ddd;border-radius:8px;margin-bottom:14px;">
 
-      <div style="display:flex;gap:8px;">
-        <button onclick="signUp()" style="flex:1;padding:10px;border:none;border-radius:8px;background:#1a5aaa;color:#fff;">新規登録</button>
-        <button onclick="signIn()" style="flex:1;padding:10px;border:none;border-radius:8px;background:#2a7a3a;color:#fff;">ログイン</button>
-      </div>
+<div style="display:flex;gap:8px;">
+  <button onclick="signIn()" style="flex:1;padding:10px;border:none;border-radius:8px;background:#2a7a3a;color:#fff;">ログイン</button>
+</div>
 
       <p id="auth-message" style="font-size:12px;color:#8a7d72;margin-top:12px;"></p>
     </div>
