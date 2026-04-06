@@ -154,10 +154,17 @@ body { font-family:'Noto Sans JP','Hiragino Sans',sans-serif; background:var(--b
 .tip-i{font-size:14px;flex-shrink:0;}
 strong{color:var(--text);}
 </style>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
 <body>
 <div id="root"></div>
 <script>
+
+const SUPABASE_URL = 'https://amwjrbyfomuiwahbahrh.supabase.co';
+const SUPABASE_ANON_KEY = 'sb_publishable_9tqj94C_usEbC_f-s4LwwA_NiSjM6lG';
+
+const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
 const TODAY = new Date(2026, 3, 7);
 
 const HABITS = [
@@ -171,50 +178,102 @@ const GOALS = [
   {id:'koroso',label:'🎬 コロソ視聴',  unit:'本',  target:46, current:0, color:'#1a5aaa', phase1End:16, phase2End:46,
    desc:'講座1（18本）を先に完走 → 講座2（28本）へ。同時進行しない。5月中旬〜下旬に講座1完走見込み。',
    extra:{at:18, label:'講座1完走', color:'#1a5aaa'}},
-  {id:'glyphs',label:'🔡 Glyphs',      unit:'文字',target:30, current:0, color:'#8a1a9a', phase1End:12, phase2End:30,
+  {id:'glyphs',label:'🔡 Glyphs',      unit:'文字',target:52, current:0, color:'#8a1a9a', phase1End:12, phase2End:30,
    desc:'週3〜5回・1文字。何でもOK。美的センスを育てる習慣。'},
   {id:'works', label:'✏️ 制作',        unit:'本',  target:15, current:0, color:'#b05a00', phase1End:2,  phase2End:15,
    desc:'ゴミでいい。30分で作って閉じる。コロソを見た当日か翌日に模倣を1個。質より数。',
    milestone:{at:12, label:'メンター初見せ目安', color:'#aa4a4a'}},
-  {id:'books', label:'📚 本',          unit:'冊',  target:3,  current:0, color:'#2a7a3a', phase1End:1,  phase2End:3,
+  {id:'books', label:'📚 本',          unit:'冊',  target:10,  current:0, color:'#2a7a3a', phase1End:1,  phase2End:3,
    desc:'週2回20〜30分。メンター推薦リストから優先順で。'},
 ];
 
 const SP = {
   '2026-4-7': {label:'🌱 START',type:'start'},
   '2026-4-13':{label:'ジム休み',type:'free'},
-  '2026-4-18':{label:'🎂 HBお祝い',type:'nostudy'},
   '2026-4-21':{label:'📋 見直し',type:'review'},
-  '2026-4-22':{label:'✈ 韓国',type:'travel'},
-  '2026-4-23':{label:'✈ 韓国',type:'travel'},
-  '2026-4-24':{label:'✈ 韓国',type:'travel'},
+  '2026-4-22':{label:'✈ 旅行',type:'travel'},
+  '2026-4-23':{label:'✈ 旅行',type:'travel'},
+  '2026-4-24':{label:'✈ 旅行',type:'travel'},
   '2026-4-25':{label:'✈ 帰国',type:'travel'},
   '2026-4-26':{label:'帰国翌日',type:'easy'},
   '2026-4-29':{label:'祝日',type:'free'},
-  '2026-5-1': {label:'明菜帰宅',type:'note'},
+  '2026-5-1': {label:'帰宅',type:'note'},
   '2026-5-3': {label:'✈ 旅行',type:'travel'},
   '2026-5-4': {label:'✈ 旅行',type:'travel'},
   '2026-5-5': {label:'✈ 旅行',type:'travel'},
   '2026-5-7': {label:'📋 見直し',type:'review'},
-  '2026-5-8': {label:'明菜帰る',type:'note'},
+  '2026-5-8': {label:'帰る',type:'note'},
   '2026-5-11':{label:'ジム休み',type:'free'},
   '2026-5-21':{label:'📋 見直し',type:'review'},
 };
 
-let state={view:'calendar',month:4,data:{},locked:{},goals:[]};
+let state={
+  view:'calendar',
+  month:4,
+  data:{},
+  locked:{},
+  goals:[],
+  user:null,
+  loading:true
+};
 
 async function load(){
-  try{
-    const r=await window.storage.get('tracker-v8');
-    if(r&&r.value){
-      const s=JSON.parse(r.value);
-      state.data=s.data||{};state.locked=s.locked||{};
-      state.goals=GOALS.map(dg=>{const sv=(s.goals||[]).find(g=>g.id===dg.id);return sv?{...dg,current:sv.current,target:sv.target}:{...dg};});
-    }else{state.goals=GOALS.map(g=>({...g}));}
-  }catch(e){state.goals=GOALS.map(g=>({...g}));}
+  if(!state.user){
+    state.goals = GOALS.map(g => ({ ...g }));
+    return;
+  }
+
+  const { data, error } = await supabase
+    .from('app_state')
+    .select('data, locked, goals')
+    .eq('user_id', state.user.id)
+    .maybeSingle();
+
+  if(error){
+    console.error('load error', error);
+    state.goals = GOALS.map(g => ({ ...g }));
+    return;
+  }
+
+  if(data){
+    state.data = data.data || {};
+    state.locked = data.locked || {};
+    state.goals = GOALS.map(defaultGoal => {
+      const savedGoal = (data.goals || []).find(g => g.id === defaultGoal.id);
+      return savedGoal
+        ? { ...defaultGoal, current: savedGoal.current, target: savedGoal.target }
+        : { ...defaultGoal };
+    });
+  } else {
+    state.data = {};
+    state.locked = {};
+    state.goals = GOALS.map(g => ({ ...g }));
+    await save();
+  }
 }
+
 async function save(){
-  try{await window.storage.set('tracker-v8',JSON.stringify({data:state.data,locked:state.locked,goals:state.goals.map(g=>({id:g.id,current:g.current,target:g.target}))}));}catch(e){}
+  if(!state.user) return;
+
+  const payload = {
+    user_id: state.user.id,
+    data: state.data,
+    locked: state.locked,
+    goals: state.goals.map(g => ({
+      id: g.id,
+      current: g.current,
+      target: g.target
+    })),
+    updated_at: new Date().toISOString()
+  };
+
+  const { error } = await supabase
+    .from('app_state')
+    .upsert(payload);
+
+  if(error){
+    console.error('save error', error);
+  }
 }
 
 const daysIn=m=>new Date(2026,m,0).getDate();
@@ -272,6 +331,88 @@ function renderCalendar(m){
   <div class="legend">${HABITS.map(h=>`<div class="legend-item"><div class="leg-ci" style="background:${h.color};border:2px solid ${h.color};"></div>${h.label}</div>`).join('')}</div>
   <div class="cal-grid">${cells}</div>`;
 }
+
+function renderAuth(){
+  document.getElementById('root').innerHTML = `
+    <div style="max-width:420px;margin:40px auto;background:#fff;border:1px solid #e4dbd0;border-radius:12px;padding:20px;">
+      <h1 style="font-size:20px;margin-bottom:8px;">同期して使うためのログイン</h1>
+      <p style="font-size:12px;color:#8a7d72;line-height:1.7;margin-bottom:16px;">
+        同じメールアドレスでログインすれば、iPhoneとPCで同じ記録が見られます。
+      </p>
+
+      <label style="display:block;font-size:12px;margin-bottom:6px;">メールアドレス</label>
+      <input id="email" type="email" style="width:100%;padding:10px;border:1px solid #ddd;border-radius:8px;margin-bottom:12px;">
+
+      <label style="display:block;font-size:12px;margin-bottom:6px;">パスワード</label>
+      <input id="password" type="password" style="width:100%;padding:10px;border:1px solid #ddd;border-radius:8px;margin-bottom:14px;">
+
+      <div style="display:flex;gap:8px;">
+        <button onclick="signUp()" style="flex:1;padding:10px;border:none;border-radius:8px;background:#1a5aaa;color:#fff;">新規登録</button>
+        <button onclick="signIn()" style="flex:1;padding:10px;border:none;border-radius:8px;background:#2a7a3a;color:#fff;">ログイン</button>
+      </div>
+
+      <p id="auth-message" style="font-size:12px;color:#8a7d72;margin-top:12px;"></p>
+    </div>
+  `;
+}
+
+function setAuthMessage(msg){
+  const el = document.getElementById('auth-message');
+  if(el) el.textContent = msg;
+}
+
+async function signUp(){
+  const email = document.getElementById('email').value.trim();
+  const password = document.getElementById('password').value.trim();
+
+  if(!email || !password){
+    setAuthMessage('メールアドレスとパスワードを入れてください。');
+    return;
+  }
+
+  const { error } = await supabase.auth.signUp({ email, password });
+
+  if(error){
+    setAuthMessage('登録できませんでした: ' + error.message);
+    return;
+  }
+
+  setAuthMessage('登録しました。メール確認が必要ならメールを確認してください。');
+}
+
+async function signIn(){
+  const email = document.getElementById('email').value.trim();
+  const password = document.getElementById('password').value.trim();
+
+  if(!email || !password){
+    setAuthMessage('メールアドレスとパスワードを入れてください。');
+    return;
+  }
+
+  const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+
+  if(error){
+    setAuthMessage('ログインできませんでした: ' + error.message);
+    return;
+  }
+
+  state.user = data.user;
+  await load();
+  render();
+}
+
+async function signOutUser(){
+  await supabase.auth.signOut();
+  state.user = null;
+  state.data = {};
+  state.locked = {};
+  state.goals = [];
+  renderAuth();
+}
+
+window.signUp = signUp;
+window.signIn = signIn;
+window.signOutUser = signOutUser;
 
 function renderProgress(m){
   const overall=habitOverallPct(),st=streak(),n=daysIn(m);
@@ -370,9 +511,9 @@ function renderRoadmap(){
     <div class="sched-phase-body">
       <div class="dtype-box">
         <div class="dtype-title">日タイプ別ルール（前日夜か当日朝に確認）</div>
-        <div class="dtype-row"><span class="dtype-label">☕ バイト＋ジム日</span>Glyphs 1文字 or コロソ1本、どちらか1つ</div>
+        <div class="dtype-row"><span class="dtype-label">☕ 💼＋ジム日</span>Glyphs 1文字 or コロソ1本、どちらか1つ</div>
         <div class="dtype-row"><span class="dtype-label">🌅 朝が空いている日</span>カフェでコロソ視聴 or 制作 60〜90分</div>
-        <div class="dtype-row"><span class="dtype-label">🌆 12〜18バイト日</span>午前中にコロソ視聴か制作。帰宅後は無理しない</div>
+        <div class="dtype-row"><span class="dtype-label">🌆 12〜18 💼日</span>午前中にコロソ視聴か制作。帰宅後は無理しない</div>
         <div class="dtype-row"><span class="dtype-label">🍽 外食・社交日</span>完全オフ。罪悪感なし</div>
       </div>
       <div class="sched-rule">
@@ -399,11 +540,11 @@ function renderRoadmap(){
           <li>コロソ講座1：2本（13日にまとめて or 週に分けて）</li>
           <li>Glyphs：週4回へ引き上げ</li>
           <li>制作：コロソを見たら翌日に30分模倣</li>
-          <li>4/18 HBお祝い → 勉強なし</li>
+
         </ul>
       </div>
       <div class="sched-week">
-        <div class="sched-week-title sw-warn">4/20–4/25（韓国旅行）⚠️ 挫折ポイント①</div>
+        <div class="sched-week-title sw-warn">4/20–4/25（旅行）⚠️ 挫折ポイント①</div>
         <ul class="sched-items">
           <li>4/20〜21：Glyphsと本だけでいい</li>
           <li>4/22〜25：完全休暇・勉強ゼロでOK</li>
@@ -417,7 +558,7 @@ function renderRoadmap(){
           <li>コロソ講座1：2本（4/29祝日にまとめて）</li>
           <li>Glyphs：週4回（ペース取り戻す）</li>
           <li>制作：余裕があれば1個。なくていい</li>
-          <li>5/1明菜さん帰宅 → 社交も入るので無理しない</li>
+          <li>5/1帰宅 → 無理しない</li>
         </ul>
       </div>
       <div class="sched-week">
@@ -438,9 +579,9 @@ function renderRoadmap(){
       <div class="sched-week">
         <div class="sched-week-title sw-p2">5月の日タイプ別ルール</div>
         <div class="dtype-box" style="margin-top:6px;">
-          <div class="dtype-row"><span class="dtype-label">☕ バイト＋ジム日</span>Glyphs or 制作 30〜45分</div>
+          <div class="dtype-row"><span class="dtype-label">☕ 💼＋ジム日</span>Glyphs or 制作 30〜45分</div>
           <div class="dtype-row"><span class="dtype-label">🌅 朝が空いている日</span>カフェで制作 60〜90分</div>
-          <div class="dtype-row"><span class="dtype-label">🌆 12〜18バイト日</span>午前中に制作1個（30分）</div>
+          <div class="dtype-row"><span class="dtype-label">🌆 12〜18 💼日</span>午前中に制作1個（30分）</div>
           <div class="dtype-row"><span class="dtype-label">🍽 外食・社交日</span>完全オフ</div>
         </div>
       </div>
@@ -499,6 +640,10 @@ function renderRoadmap(){
 }
 
 function render(){
+    if(!state.user){
+    renderAuth();
+    return;
+  }
   const m=state.month;
   const showMonth=['calendar','progress'].includes(state.view);
   let content='';
@@ -526,7 +671,27 @@ window.decGoal=decGoal;
 window.editTarget=editTarget;
 window.toggleSched=toggleSched;
 
-(async()=>{await load();render();})();
+(async () => {
+  const { data } = await supabase.auth.getSession();
+  state.user = data.session?.user ?? null;
+
+  if(state.user){
+    await load();
+    render();
+  } else {
+    renderAuth();
+  }
+
+  supabase.auth.onAuthStateChange(async (_event, session) => {
+    state.user = session?.user ?? null;
+    if(state.user){
+      await load();
+      render();
+    } else {
+      renderAuth();
+    }
+  });
+})();
 </script>
 </body>
 </html>
