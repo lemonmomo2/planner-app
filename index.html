@@ -160,10 +160,10 @@ strong{color:var(--text);}
 <div id="root"></div>
 <script>
 
-const SUPABASE_URL = 'https://amwjrbyfomuiwahbahrh.supabase.co';
+const SUPABASE_URL = 'https://amwjrbyfomuiwahbahrh.sb.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_9tqj94C_usEbC_f-s4LwwA_NiSjM6lG';
 
-const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 const TODAY = new Date(2026, 3, 7);
 
@@ -223,7 +223,7 @@ async function load(){
     return;
   }
 
-  const { data, error } = await supabase
+  const { data, error } = await sb
     .from('app_state')
     .select('data, locked, goals')
     .eq('user_id', state.user.id)
@@ -267,7 +267,7 @@ async function save(){
     updated_at: new Date().toISOString()
   };
 
-  const { error } = await supabase
+  const { error } = await sb
     .from('app_state')
     .upsert(payload);
 
@@ -370,7 +370,7 @@ async function signUp(){
     return;
   }
 
-  const { error } = await supabase.auth.signUp({ email, password });
+  const { error } = await sb.auth.signUp({ email, password });
 
   if(error){
     setAuthMessage('登録できませんでした: ' + error.message);
@@ -389,7 +389,7 @@ async function signIn(){
     return;
   }
 
-  const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+  const { data, error } = await sb.auth.signInWithPassword({ email, password });
 
   if(error){
     setAuthMessage('ログインできませんでした: ' + error.message);
@@ -402,7 +402,7 @@ async function signIn(){
 }
 
 async function signOutUser(){
-  await supabase.auth.signOut();
+  await sb.auth.signOut();
   state.user = null;
   state.data = {};
   state.locked = {};
@@ -672,7 +672,7 @@ window.editTarget=editTarget;
 window.toggleSched=toggleSched;
 
 (async () => {
-  const { data } = await supabase.auth.getSession();
+  const { data } = await sb.auth.getSession();
   state.user = data.session?.user ?? null;
 
   if(state.user){
@@ -682,7 +682,7 @@ window.toggleSched=toggleSched;
     renderAuth();
   }
 
-  supabase.auth.onAuthStateChange(async (_event, session) => {
+  sb.auth.onAuthStateChange(async (_event, session) => {
     state.user = session?.user ?? null;
     if(state.user){
       await load();
