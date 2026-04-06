@@ -1,0 +1,532 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@300;400;500;700&display=swap" rel="stylesheet">
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --bg: #f6f1eb; --surface: #fff; --border: #e4dbd0;
+  --text: #1e1a15; --muted: #8a7d72; --subtle: #c0b5aa;
+  --book: #2a7a3a; --koroso: #1a5aaa; --glyphs: #8a1a9a; --illust: #b05a00;
+  --p1c: #2a7a3a; --p2c: #1a5aaa; --p3c: #aa4a4a;
+}
+body { font-family:'Noto Sans JP','Hiragino Sans',sans-serif; background:var(--bg); color:var(--text); padding:16px; font-size:13px; }
+
+.main-tabs { display:flex; background:var(--surface); border:1px solid var(--border); border-radius:10px; padding:3px; margin-bottom:14px; gap:2px; }
+.main-tab { flex:1; padding:8px 2px; border-radius:7px; border:none; background:transparent; color:var(--muted); font-size:10px; cursor:pointer; font-family:inherit; transition:all .15s; }
+.main-tab.active { background:var(--bg); color:var(--text); font-weight:700; box-shadow:0 1px 4px rgba(0,0,0,.1); }
+.month-tabs { display:flex; gap:6px; margin-bottom:14px; }
+.month-tab { padding:5px 16px; border-radius:20px; border:1px solid var(--border); background:var(--surface); color:var(--muted); font-size:12px; cursor:pointer; font-family:inherit; transition:all .15s; }
+.month-tab.active { background:#1e1a15; color:#f6f1eb; border-color:#1e1a15; }
+.sec { font-size:10px; letter-spacing:.1em; color:var(--muted); text-transform:uppercase; margin-bottom:10px; font-weight:500; }
+
+.legend { display:flex; gap:10px; flex-wrap:wrap; margin-bottom:12px; font-size:10px; color:var(--muted); align-items:center; }
+.leg-sq { width:11px; height:11px; border-radius:3px; border:1px solid; }
+.leg-ci { width:11px; height:11px; border-radius:50%; }
+.cal-grid { display:grid; grid-template-columns:repeat(7,1fr); gap:3px; }
+.cal-wdh { text-align:center; font-size:10px; color:var(--muted); padding:4px 0; font-weight:500; }
+.cal-wdh.sat{color:#5a7aaa;} .cal-wdh.sun{color:#aa5a5a;}
+.cal-cell { background:var(--surface); border:1px solid var(--border); border-radius:7px; padding:5px 6px; min-height:68px; }
+.cal-cell.empty{background:transparent;border-color:transparent;min-height:0;}
+.cal-cell.c-travel{background:#fff5e8;border-color:#f0d8b0;}
+.cal-cell.c-nostudy{background:#f5f5f5;border-color:#e5e5e5;}
+.cal-cell.c-free{background:#edf7ed;border-color:#c0dcc0;}
+.cal-cell.c-review{background:#fdf0ff;border-color:#d8a0f0;}
+.cal-cell.c-today{border-color:#1e1a15!important;border-width:2px;}
+.cal-cell.c-past{opacity:.72;}
+.cal-top{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:3px;}
+.cal-num{font-size:12px;font-weight:600;}
+.cal-today-pip{width:6px;height:6px;background:#1e1a15;border-radius:50%;margin-top:3px;}
+.cal-ev{font-size:8px;line-height:1.3;color:var(--muted);margin-bottom:3px;}
+.ev-travel{color:#b06010;} .ev-free{color:#2a7a3a;font-weight:500;} .ev-start{color:#1a5aaa;font-weight:600;} .ev-review{color:#8a1a9a;font-weight:600;}
+.cal-nostudy-label{font-size:8px;color:#bbb;}
+.cal-dots{display:flex;gap:3px;flex-wrap:wrap;margin-top:3px;}
+.cal-dot{width:9px;height:9px;border-radius:50%;border:1.5px solid;cursor:pointer;transition:transform .08s;}
+.cal-dot:hover{transform:scale(1.3);}
+.cal-dot.book-d{border-color:var(--book);} .cal-dot.filled.book-d{background:var(--book);}
+.cal-dot.kor-d{border-color:var(--koroso);} .cal-dot.filled.kor-d{background:var(--koroso);}
+.cal-dot.gly-d{border-color:var(--glyphs);} .cal-dot.filled.gly-d{background:var(--glyphs);}
+.cal-dot.ill-d{border-color:var(--illust);} .cal-dot.filled.ill-d{background:var(--illust);}
+.lock-btn{font-size:11px;background:none;border:none;cursor:pointer;color:var(--subtle);padding:0;}
+.lock-btn:hover{color:var(--text);} .lock-btn.is-locked{color:var(--muted);}
+
+.stats-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px;}
+.stat-card{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:12px 14px;}
+.stat-card.full{grid-column:1/-1;}
+.stat-label{font-size:10px;color:var(--muted);margin-bottom:3px;}
+.stat-value{font-size:26px;font-weight:700;}
+.stat-note{font-size:9px;color:var(--subtle);margin-top:2px;}
+.hbar-row{display:flex;align-items:center;gap:10px;margin-bottom:8px;}
+.hbar-row:last-child{margin-bottom:0;}
+.hbar-label{width:78px;font-size:11px;flex-shrink:0;}
+.hbar-track{flex:1;height:7px;background:var(--bg);border-radius:4px;overflow:hidden;}
+.hbar-fill{height:100%;border-radius:4px;transition:width .4s;}
+.hbar-pct{width:34px;text-align:right;font-size:11px;color:var(--muted);}
+.tracker-wrap{overflow-x:auto;padding-bottom:6px;margin-bottom:16px;}
+.tr-inner{display:flex;flex-direction:column;gap:3px;min-width:max-content;}
+.tr-row{display:flex;gap:3px;align-items:center;}
+.tr-label{width:78px;flex-shrink:0;text-align:right;padding-right:7px;font-size:11px;color:var(--muted);line-height:1.3;}
+.tr-sub{font-size:9px;color:var(--subtle);}
+.tr-dh{width:24px;text-align:center;font-size:8.5px;color:var(--subtle);flex-shrink:0;line-height:1.3;}
+.tr-dh.is-today{color:var(--text);font-weight:700;}
+.tr-cell{width:24px;height:24px;border-radius:4px;flex-shrink:0;border:1.5px solid var(--border);background:var(--surface);cursor:pointer;transition:all .1s;display:flex;align-items:center;justify-content:center;font-size:8px;}
+.tr-cell.tr-future{border-style:dashed;opacity:.5;}
+.tr-cell:hover:not(.tr-locked){border-color:#aaa;}
+.tr-cell:active:not(.tr-locked){transform:scale(.86);}
+.tr-cell.tr-locked{cursor:default;background:#f0f0f0;border-color:#e8e8e8;}
+.tr-cell.tr-past:not(.tr-filled){background:var(--bg);border-color:#ddd;}
+.tr-cell.tr-filled.book-f{background:var(--book);border-color:var(--book);color:#fff;}
+.tr-cell.tr-filled.kor-f{background:var(--koroso);border-color:var(--koroso);color:#fff;}
+.tr-cell.tr-filled.gly-f{background:var(--glyphs);border-color:var(--glyphs);color:#fff;}
+.tr-cell.tr-filled.ill-f{background:var(--illust);border-color:var(--illust);color:#fff;}
+.trev{width:24px;height:16px;border-radius:3px;flex-shrink:0;font-size:7px;text-align:center;display:flex;align-items:center;justify-content:center;}
+.trev-travel{background:#fdebd0;color:#b06010;} .trev-nostudy{background:#f0f0f0;color:#aaa;}
+.trev-free{background:#e8f5e9;color:var(--book);} .trev-review{background:#f5e8ff;color:#8a1a9a;}
+.trev-note{background:#e8eef8;color:var(--koroso);} .trev-empty{background:transparent;}
+
+.overall-card{background:var(--surface);border:2px solid var(--border);border-radius:12px;padding:16px;margin-bottom:14px;text-align:center;}
+.overall-num{font-size:40px;font-weight:700;line-height:1;margin-bottom:4px;}
+.overall-sub{font-size:11px;color:var(--muted);}
+.goal-note{background:#fffbf5;border:1px solid #f0dcc0;border-radius:8px;padding:10px 14px;font-size:11px;color:#8a6020;margin-bottom:14px;line-height:1.7;}
+.goal-card{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:14px;margin-bottom:10px;}
+.goal-head{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:4px;}
+.goal-name{font-size:13px;font-weight:600;}
+.goal-frac{font-size:12px;color:var(--muted);white-space:nowrap;margin-left:8px;}
+.goal-desc{font-size:10px;color:var(--muted);margin-bottom:8px;line-height:1.5;}
+.goal-bar-wrap{height:7px;background:var(--bg);border-radius:4px;overflow:hidden;margin-bottom:10px;}
+.goal-bar{height:100%;border-radius:4px;transition:width .4s;}
+.goal-controls{display:flex;align-items:center;gap:8px;}
+.g-btn{width:28px;height:28px;border-radius:6px;border:1px solid var(--border);background:var(--bg);cursor:pointer;font-size:14px;display:flex;align-items:center;justify-content:center;color:var(--text);}
+.g-btn:hover{background:var(--border);}
+.g-count{font-size:16px;font-weight:700;min-width:28px;text-align:center;}
+.g-separator{color:var(--subtle);font-size:12px;}
+.g-target{display:flex;align-items:center;gap:4px;cursor:pointer;padding:4px 8px;border-radius:6px;border:1px dashed var(--border);font-size:11px;color:var(--muted);}
+.g-target:hover{background:var(--bg);color:var(--text);}
+.g-pct{margin-left:auto;font-size:13px;font-weight:700;}
+
+/* Roadmap */
+.rm-wrap{}
+.rm-legend{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:16px;padding:10px 14px;background:var(--surface);border:1px solid var(--border);border-radius:8px;font-size:10px;}
+.rm-leg-item{display:flex;align-items:center;gap:5px;color:var(--muted);}
+.rm-leg-sq{width:14px;height:8px;border-radius:2px;}
+.rm-track{margin-bottom:20px;}
+.rm-track-name{font-size:12px;font-weight:600;margin-bottom:5px;display:flex;justify-content:space-between;align-items:baseline;}
+.rm-track-unit{font-size:10px;color:var(--muted);font-weight:400;}
+.rm-bar-outer{position:relative;height:32px;border-radius:6px;background:#ece8e2;overflow:visible;border:1px solid var(--border);}
+.rm-zone{position:absolute;top:0;height:100%;opacity:0.18;}
+.rm-zone.p1{background:var(--p1c);} .rm-zone.p2{background:var(--p2c);} .rm-zone.p3{background:var(--p3c);}
+.rm-progress{position:absolute;top:0;left:0;height:100%;border-radius:5px 0 0 5px;transition:width .5s ease;z-index:2;}
+.rm-divider{position:absolute;top:-6px;bottom:-6px;width:2px;z-index:4;}
+.rm-divider.p1end{background:var(--p1c);} .rm-divider.p2end{background:var(--p2c);}
+.rm-ticks{position:relative;height:18px;margin-top:2px;}
+.rm-tick{position:absolute;top:0;font-size:9px;color:var(--muted);transform:translateX(-50%);}
+
+/* Schedule */
+.sched-phase{background:var(--surface);border:1px solid var(--border);border-radius:10px;margin-bottom:10px;overflow:hidden;}
+.sched-phase-head{display:flex;align-items:center;gap:10px;padding:12px 14px;cursor:pointer;user-select:none;}
+.sched-phase-dot{width:10px;height:10px;border-radius:50%;flex-shrink:0;}
+.sched-phase-title{font-size:13px;font-weight:700;flex:1;}
+.sched-phase-period{font-size:10px;color:var(--muted);}
+.sched-phase-arr{font-size:10px;color:var(--subtle);transition:transform .2s;}
+.sched-phase-body{max-height:0;overflow:hidden;transition:max-height .3s ease,padding .2s;}
+.sched-phase-body.open{max-height:2000px;padding:0 14px 14px;}
+.sched-week{margin-bottom:14px;}
+.sched-week:last-child{margin-bottom:0;}
+.sched-week-title{font-size:11px;font-weight:700;padding:5px 10px;border-radius:5px;margin-bottom:6px;display:inline-block;}
+.sw-p1{background:#e8f5e9;color:var(--p1c);}
+.sw-p2{background:#e8f0ff;color:var(--p2c);}
+.sw-warn{background:#fff3e0;color:#b05a00;}
+.sched-items{font-size:11px;line-height:1.9;color:#5a5048;padding-left:4px;}
+.sched-items li{list-style:none;padding-left:14px;position:relative;}
+.sched-items li::before{content:'·';position:absolute;left:4px;color:var(--subtle);}
+.sched-note{background:#fffbf5;border-left:3px solid #f0d050;padding:7px 10px;border-radius:0 5px 5px 0;font-size:10px;color:#7a6020;line-height:1.6;margin-top:6px;}
+.sched-rule{background:#f0f4ff;border-left:3px solid var(--p2c);padding:7px 10px;border-radius:0 5px 5px 0;font-size:10px;color:#1a3a7a;line-height:1.7;margin-top:6px;}
+.dtype-box{background:#f6f1eb;border-radius:7px;padding:10px 12px;margin-bottom:8px;}
+.dtype-title{font-size:11px;font-weight:700;margin-bottom:4px;}
+.dtype-row{display:flex;gap:8px;font-size:10px;color:var(--muted);margin-bottom:3px;align-items:flex-start;}
+.dtype-label{font-weight:600;color:var(--text);min-width:110px;flex-shrink:0;}
+
+.tips-card{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:16px;}
+.tip{display:flex;gap:10px;margin-bottom:10px;font-size:11px;line-height:1.7;color:#5a5048;align-items:flex-start;}
+.tip:last-child{margin-bottom:0;}
+.tip-i{font-size:14px;flex-shrink:0;}
+strong{color:var(--text);}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script>
+const TODAY = new Date(2026, 3, 7);
+
+const HABITS = [
+  {id:'book',  label:'📚 本',    note:'週2回', fill:'book-f', dot:'book-d', color:'#2a7a3a'},
+  {id:'koroso',label:'🎬 コロソ', note:'1本',   fill:'kor-f',  dot:'kor-d',  color:'#1a5aaa'},
+  {id:'glyphs',label:'🔡 Glyphs',note:'1文字', fill:'gly-f',  dot:'gly-d',  color:'#8a1a9a'},
+  {id:'illust',label:'✏️ 制作',  note:'30分',  fill:'ill-f',  dot:'ill-d',  color:'#b05a00'},
+];
+
+const GOALS = [
+  {id:'koroso',label:'🎬 コロソ視聴',  unit:'本',  target:46, current:0, color:'#1a5aaa', phase1End:16, phase2End:46,
+   desc:'講座1（18本）を先に完走 → 講座2（28本）へ。同時進行しない。5月中旬〜下旬に講座1完走見込み。',
+   extra:{at:18, label:'講座1完走', color:'#1a5aaa'}},
+  {id:'glyphs',label:'🔡 Glyphs',      unit:'文字',target:30, current:0, color:'#8a1a9a', phase1End:12, phase2End:30,
+   desc:'週3〜5回・1文字。何でもOK。美的センスを育てる習慣。'},
+  {id:'works', label:'✏️ 制作',        unit:'本',  target:15, current:0, color:'#b05a00', phase1End:2,  phase2End:15,
+   desc:'ゴミでいい。30分で作って閉じる。コロソを見た当日か翌日に模倣を1個。質より数。',
+   milestone:{at:12, label:'メンター初見せ目安', color:'#aa4a4a'}},
+  {id:'books', label:'📚 本',          unit:'冊',  target:3,  current:0, color:'#2a7a3a', phase1End:1,  phase2End:3,
+   desc:'週2回20〜30分。メンター推薦リストから優先順で。'},
+];
+
+const SP = {
+  '2026-4-7': {label:'🌱 START',type:'start'},
+  '2026-4-13':{label:'ジム休み',type:'free'},
+  '2026-4-18':{label:'🎂 HBお祝い',type:'nostudy'},
+  '2026-4-21':{label:'📋 見直し',type:'review'},
+  '2026-4-22':{label:'✈ 韓国',type:'travel'},
+  '2026-4-23':{label:'✈ 韓国',type:'travel'},
+  '2026-4-24':{label:'✈ 韓国',type:'travel'},
+  '2026-4-25':{label:'✈ 帰国',type:'travel'},
+  '2026-4-26':{label:'帰国翌日',type:'easy'},
+  '2026-4-29':{label:'祝日',type:'free'},
+  '2026-5-1': {label:'明菜帰宅',type:'note'},
+  '2026-5-3': {label:'✈ 旅行',type:'travel'},
+  '2026-5-4': {label:'✈ 旅行',type:'travel'},
+  '2026-5-5': {label:'✈ 旅行',type:'travel'},
+  '2026-5-7': {label:'📋 見直し',type:'review'},
+  '2026-5-8': {label:'明菜帰る',type:'note'},
+  '2026-5-11':{label:'ジム休み',type:'free'},
+  '2026-5-21':{label:'📋 見直し',type:'review'},
+};
+
+let state={view:'calendar',month:4,data:{},locked:{},goals:[]};
+
+async function load(){
+  try{
+    const r=await window.storage.get('tracker-v8');
+    if(r&&r.value){
+      const s=JSON.parse(r.value);
+      state.data=s.data||{};state.locked=s.locked||{};
+      state.goals=GOALS.map(dg=>{const sv=(s.goals||[]).find(g=>g.id===dg.id);return sv?{...dg,current:sv.current,target:sv.target}:{...dg};});
+    }else{state.goals=GOALS.map(g=>({...g}));}
+  }catch(e){state.goals=GOALS.map(g=>({...g}));}
+}
+async function save(){
+  try{await window.storage.set('tracker-v8',JSON.stringify({data:state.data,locked:state.locked,goals:state.goals.map(g=>({id:g.id,current:g.current,target:g.target}))}));}catch(e){}
+}
+
+const daysIn=m=>new Date(2026,m,0).getDate();
+const wd=(m,d)=>new Date(2026,m-1,d).getDay();
+const calOff=(m,d)=>{const w=wd(m,d);return w===0?6:w-1;};
+const isToday=(m,d)=>m===TODAY.getMonth()+1&&d===TODAY.getDate();
+const isPast=(m,d)=>new Date(2026,m-1,d)<TODAY;
+const isFut=(m,d)=>new Date(2026,m-1,d)>TODAY;
+const isWend=(m,d)=>{const w=wd(m,d);return w===0||w===6;};
+const sp=(m,d)=>SP[`2026-${m}-${d}`]||null;
+function isLocked(m,d){if(state.locked[`2026-${m}-${d}`])return true;const s=sp(m,d);return s&&(s.type==='travel'||s.type==='nostudy');}
+const hk=(id,m,d)=>`${id}-${m}-${d}`;
+const isDone=(id,m,d)=>!!state.data[hk(id,m,d)];
+function toggleHabit(id,m,d){if(isLocked(m,d))return;state.data[hk(id,m,d)]=!state.data[hk(id,m,d)];save();render();}
+function toggleLock(m,d){const s=sp(m,d);if(s&&(s.type==='travel'||s.type==='nostudy'))return;state.locked[`2026-${m}-${d}`]=!state.locked[`2026-${m}-${d}`];save();render();}
+function habitPct(id){let done=0,total=0;for(let m=4;m<=5;m++)for(let d=1;d<=daysIn(m);d++){if(isLocked(m,d)||isFut(m,d))continue;if(m===4&&d<7)continue;total++;if(isDone(id,m,d))done++;}return total>0?Math.round(done/total*100):0;}
+function habitOverallPct(){return Math.round(HABITS.reduce((a,h)=>a+habitPct(h.id),0)/HABITS.length);}
+function streak(){let s=0;const d=new Date(TODAY);for(let i=0;i<90;i++){const m=d.getMonth()+1,day=d.getDate();if(!isLocked(m,day)){if(!HABITS.some(h=>isDone(h.id,m,day)))break;s++;}d.setDate(d.getDate()-1);}return s;}
+function goalOverallPct(){if(!state.goals.length)return 0;return Math.round(state.goals.reduce((a,g)=>a+Math.min(Math.round(g.current/g.target*100),100),0)/state.goals.length);}
+function incGoal(id){const g=state.goals.find(g=>g.id===id);if(g){g.current=Math.min(g.current+1,g.target+50);save();render();}}
+function decGoal(id){const g=state.goals.find(g=>g.id===id);if(g&&g.current>0){g.current--;save();render();}}
+function editTarget(id){const g=state.goals.find(g=>g.id===id);if(!g)return;const val=prompt(`「${g.label}」の目標数（現在:${g.target}${g.unit}）\n変更するとロードマップのバーも変わります`,g.target);if(val!==null){const n=parseInt(val);if(!isNaN(n)&&n>0){g.target=n;save();render();}}}
+function toggleSched(i){const b=document.querySelectorAll('.sched-phase-body')[i];const a=document.querySelectorAll('.sched-phase-arr')[i];if(b){b.classList.toggle('open');if(a)a.textContent=b.classList.contains('open')?'▲':'▼';}}
+
+const WD_H=['月','火','水','木','金','土','日'];
+const WD_S=['日','月','火','水','木','金','土'];
+
+function renderCalendar(m){
+  const n=daysIn(m),off=calOff(m,1);
+  let cells=WD_H.map((nm,i)=>`<div class="cal-wdh ${i===5?'sat':i===6?'sun':''}">${nm}</div>`).join('');
+  for(let i=0;i<off;i++)cells+='<div class="cal-cell empty"></div>';
+  for(let d=1;d<=n;d++){
+    const s=sp(m,d),locked=isLocked(m,d),manLocked=!!state.locked[`2026-${m}-${d}`];
+    const isTravel=s&&s.type==='travel',isPreset=s&&s.type==='nostudy',isReview=s&&s.type==='review';
+    const isFree=s&&s.type==='free',fut=isFut(m,d),today=isToday(m,d),past=isPast(m,d),wend=isWend(m,d);
+    let cc='cal-cell';
+    if(isTravel||isPreset||manLocked)cc+=' c-nostudy';
+    if(isTravel)cc+=' c-travel';if(isFree)cc+=' c-free';if(isReview)cc+=' c-review';
+    if(today)cc+=' c-today';if(past)cc+=' c-past';
+    const evCls=isTravel?'ev-travel':isFree?'ev-free':isReview?'ev-review':s?.type==='start'?'ev-start':'';
+    const evHtml=s?`<div class="cal-ev ${evCls}">${s.label}</div>`:'';
+    const nsHtml=(locked||manLocked)?'<div class="cal-nostudy-label">勉強なし</div>':'';
+    let dotsHtml='';
+    if(!locked&&!manLocked){const dots=HABITS.map(h=>`<div class="cal-dot ${h.dot} ${isDone(h.id,m,d)?'filled':''}" style="${fut?'opacity:.5':''}" onclick="toggleHabit('${h.id}',${m},${d})"></div>`).join('');dotsHtml=`<div class="cal-dots">${dots}</div>`;}
+    let lockBtn='';
+    if(!isTravel&&!isPreset&&(wend||manLocked)){lockBtn=`<button class="lock-btn ${manLocked?'is-locked':''}" onclick="toggleLock(${m},${d})">${manLocked?'🔒':'🔓'}</button>`;}
+    cells+=`<div class="${cc}"><div class="cal-top"><span class="cal-num">${d}${fut?'<span style="font-size:7px;color:var(--subtle)"> 予</span>':''}</span>${today?'<div class="cal-today-pip"></div>':lockBtn}</div>${evHtml}${nsHtml}${dotsHtml}</div>`;
+  }
+  return`<div class="legend">
+    <div class="legend-item"><div class="leg-sq" style="background:#fff5e8;border-color:#f0d8b0;"></div>旅行</div>
+    <div class="legend-item"><div class="leg-sq" style="background:#edf7ed;border-color:#c0dcc0;"></div>⚡自由時間多い日</div>
+    <div class="legend-item"><div class="leg-sq" style="background:#fdf5ff;border-color:#d8a0f0;"></div>📋見直し日</div>
+    <div class="legend-item">🔓週末タップで休みに切替</div>
+  </div>
+  <div class="legend">${HABITS.map(h=>`<div class="legend-item"><div class="leg-ci" style="background:${h.color};border:2px solid ${h.color};"></div>${h.label}</div>`).join('')}</div>
+  <div class="cal-grid">${cells}</div>`;
+}
+
+function renderProgress(m){
+  const overall=habitOverallPct(),st=streak(),n=daysIn(m);
+  const s=`<div class="stats-grid">
+    <div class="stat-card"><div class="stat-label">習慣達成率（今日まで）</div><div class="stat-value">${overall}%</div><div class="stat-note">最初は0%から。上がるのを楽しむ</div></div>
+    <div class="stat-card"><div class="stat-label">連続日数</div><div class="stat-value">${st}日</div><div class="stat-note">旅行日は除外</div></div>
+    <div class="stat-card full"><div class="stat-label" style="margin-bottom:10px;">習慣別達成率</div>
+    ${HABITS.map(h=>{const p=habitPct(h.id);return`<div class="hbar-row"><div class="hbar-label">${h.label}</div><div class="hbar-track"><div class="hbar-fill" style="width:${p}%;background:${h.color};"></div></div><div class="hbar-pct">${p}%</div></div>`;}).join('')}
+    </div></div>`;
+  const dh=Array.from({length:n},(_,i)=>{const d=i+1,w=wd(m,d);return`<div class="tr-dh ${isToday(m,d)?'is-today':''}"><div>${d}</div><div>${WD_S[w]}</div></div>`;}).join('');
+  const er=Array.from({length:n},(_,i)=>{const d=i+1,sv=sp(m,d),locked=isLocked(m,d)||!!state.locked[`2026-${m}-${d}`];let cls='trev-empty',lbl='';if(sv&&sv.type==='travel'){cls='trev-travel';lbl='✈';}else if(locked){cls='trev-nostudy';lbl='×';}else if(sv&&sv.type==='free'){cls='trev-free';lbl='⚡';}else if(sv&&sv.type==='review'){cls='trev-review';lbl='📋';}else if(sv){cls='trev-note';lbl='◆';}return`<div class="trev ${cls}">${lbl}</div>`;}).join('');
+  const hr=HABITS.map(h=>{const cs=Array.from({length:n},(_,i)=>{const d=i+1;const locked=isLocked(m,d)||!!state.locked[`2026-${m}-${d}`];const fut=isFut(m,d),done=isDone(h.id,m,d),past=isPast(m,d);const cls=['tr-cell',locked?'tr-locked':'',fut?'tr-future':'',done?`tr-filled ${h.fill}`:'',past&&!done&&!locked?'tr-past':''].filter(Boolean).join(' ');const click=!locked?`onclick="toggleHabit('${h.id}',${m},${d})"`:' ';return`<div class="${cls}" ${click}>${done?'✓':''}</div>`;}).join('');return`<div class="tr-row"><div class="tr-label">${h.label}<br><span class="tr-sub">${h.note}</span></div>${cs}</div>`;}).join('');
+  return`${s}<div class="sec">月別トラッカー（点線=未来も入力可）</div>
+  <div class="tracker-wrap"><div class="tr-inner">
+    <div class="tr-row"><div style="width:78px;flex-shrink:0;"></div>${dh}</div>
+    <div class="tr-row" style="margin-bottom:4px;"><div class="tr-label" style="font-size:9px;">予定</div>${er}</div>
+    ${hr}
+  </div></div>
+  <div class="sec">自己省察タイプへ</div>
+  <div class="tips-card">
+    <div class="tip"><span class="tip-i">📌</span><span>記録するのは<strong>「やった事実」だけ</strong>。なぜできなかったかは書かない。</span></div>
+    <div class="tip"><span class="tip-i">📊</span><span>%は上がることを楽しむためのもの。<strong>今日ゼロでも明日塗れば上がる。</strong></span></div>
+    <div class="tip"><span class="tip-i">👥</span><span>自分に厳しくなったら<strong>「友達が同じ状況なら？」</strong>と問いかける。</span></div>
+    <div class="tip"><span class="tip-i">⚡</span><span>サボった翌日に戻れた回数を数える。<strong>リカバリーできる人が転職できる人。</strong></span></div>
+  </div>`;
+}
+
+function renderGoals(){
+  const overall=goalOverallPct();
+  const gc=overall>=80?'#2a7a3a':overall>=50?'#1a5aaa':'#1e1a15';
+  return`<div class="overall-card">
+    <div class="stat-label">独学フェーズ 全体達成率</div>
+    <div class="overall-num" style="color:${gc}">${overall}%</div>
+    <div class="overall-sub">メンター開始までの全ゴールの平均達成率</div>
+  </div>
+  <div class="goal-note">⚠️ <strong>目標数は変えていい</strong> — メンターの指示で即更新。「編集」で変更するとロードマップのバーも自動で伸び縮みします。</div>
+  <div class="sec">ゴール別進捗</div>
+  ${state.goals.map(g=>{const pct=Math.min(Math.round(g.current/g.target*100),100);return`<div class="goal-card">
+    <div class="goal-head"><span class="goal-name">${g.label}</span><span class="goal-frac">${g.current} / ${g.target}${g.unit}</span></div>
+    <div class="goal-desc">${g.desc}</div>
+    <div class="goal-bar-wrap"><div class="goal-bar" style="width:${pct}%;background:${g.color};"></div></div>
+    <div class="goal-controls">
+      <button class="g-btn" onclick="decGoal('${g.id}')">－</button>
+      <span class="g-count">${g.current}</span>
+      <button class="g-btn" onclick="incGoal('${g.id}')">＋</button>
+      <span class="g-separator">／</span>
+      <div class="g-target" onclick="editTarget('${g.id}')">🎯 ${g.target}${g.unit} <span style="font-size:9px;">編集</span></div>
+      <span class="g-pct" style="color:${g.color}">${pct}%</span>
+    </div>
+  </div>`;}).join('')}`;
+}
+
+function renderRoadmap(){
+  const goalsMap={};state.goals.forEach(g=>goalsMap[g.id]=g);
+  function makeBar(gd,gs){
+    const t=gs.target,cur=Math.min(gs.current,t);
+    const p1=Math.min(gd.phase1End,t),p2=Math.min(gd.phase2End||t,t);
+    const p1p=(p1/t*100).toFixed(1),p2p=(p2/t*100).toFixed(1),curP=(cur/t*100).toFixed(1);
+    const zones=`<div class="rm-zone p1" style="left:0;width:${p1p}%;border-radius:5px 0 0 5px;"></div>
+      <div class="rm-zone p2" style="left:${p1p}%;width:${(p2p-p1p)}%;"></div>
+      ${p2<t?`<div class="rm-zone p3" style="left:${p2p}%;width:${(100-p2p)}%;border-radius:0 5px 5px 0;"></div>`:''}`;
+    const divs=`${p1<t?`<div class="rm-divider p1end" style="left:calc(${p1p}% - 1px);"></div>`:''}
+      ${p2<t&&p2>p1?`<div class="rm-divider p2end" style="left:calc(${p2p}% - 1px);"></div>`:''}`;
+    const prog=cur>0?`<div class="rm-progress" style="width:${curP}%;background:${gs.color};opacity:0.75;"></div>`:'';
+    const curMark=cur>0?`<div style="position:absolute;left:calc(${curP}% - 1px);top:0;bottom:0;width:2px;background:${gs.color};z-index:6;"></div>
+      <div style="position:absolute;left:calc(${curP}% - 12px);top:-18px;font-size:9px;font-weight:700;color:${gs.color};z-index:7;white-space:nowrap;">▼ ${cur}${gs.unit}</div>`:'';
+    let extras='';
+    if(gd.extra&&gd.extra.at<=t){const ep=(gd.extra.at/t*100).toFixed(1);extras+=`<div style="position:absolute;left:calc(${ep}% - 1px);top:0;bottom:0;width:1.5px;background:${gd.extra.color};opacity:0.6;z-index:5;"></div><div style="position:absolute;left:${ep}%;bottom:-22px;font-size:8px;color:${gd.extra.color};font-weight:600;white-space:nowrap;transform:translateX(-50%);">${gd.extra.label}</div>`;}
+    if(gd.milestone&&gd.milestone.at<=t){const mp=(gd.milestone.at/t*100).toFixed(1);extras+=`<div style="position:absolute;left:calc(${mp}% - 1px);top:-8px;bottom:-8px;width:2px;background:${gd.milestone.color};z-index:5;"></div><div style="position:absolute;left:${mp}%;bottom:-22px;font-size:8px;color:${gd.milestone.color};font-weight:600;white-space:nowrap;transform:translateX(-50%);">${gd.milestone.label}</div>`;}
+    const labels=`<div style="position:absolute;left:${p1p/2}%;top:50%;transform:translate(-50%,-50%);font-size:8px;font-weight:700;color:rgba(42,122,58,0.7);pointer-events:none;">P1</div>
+      ${p2>p1?`<div style="position:absolute;left:${parseFloat(p1p)+(parseFloat(p2p)-parseFloat(p1p))/2}%;top:50%;transform:translate(-50%,-50%);font-size:8px;font-weight:700;color:rgba(26,90,170,0.7);pointer-events:none;">P2</div>`:''}
+      ${p2<t?`<div style="position:absolute;left:${parseFloat(p2p)+(100-parseFloat(p2p))/2}%;top:50%;transform:translate(-50%,-50%);font-size:8px;font-weight:700;color:rgba(170,74,74,0.7);pointer-events:none;">P3</div>`:''}`;
+    const tickSet=new Set([0,p1,p2<t?p2:null,t].filter(v=>v!==null));
+    const ticks=[...tickSet].map(v=>`<div class="rm-tick" style="left:${(v/t*100).toFixed(1)}%;">${v}</div>`).join('');
+    return`<div class="rm-track">
+      <div class="rm-track-name">${gd.label}<span class="rm-track-unit">${gs.current} / ${t} ${gs.unit}</span></div>
+      <div style="margin-top:24px;">
+        <div class="rm-bar-outer">${zones}${prog}${divs}${extras}${curMark}${labels}</div>
+        <div class="rm-ticks" style="position:relative;height:20px;margin-top:24px;">${ticks}</div>
+      </div>
+    </div>`;
+  }
+
+  const barsHtml=GOALS.map(gd=>makeBar(gd,state.goals.find(g=>g.id===gd.id)||gd)).join('');
+
+  const schedHtml=`
+  <div class="sec" style="margin-top:28px;">フェーズ別スケジュール（タップで開閉）</div>
+
+  <div class="sched-phase">
+    <div class="sched-phase-head" onclick="toggleSched(0)">
+      <div class="sched-phase-dot" style="background:var(--p1c);"></div>
+      <div class="sched-phase-title">Phase 1 — 慣れる</div>
+      <div class="sched-phase-period">4/7 → 5/2</div>
+      <div class="sched-phase-arr">▼</div>
+    </div>
+    <div class="sched-phase-body">
+      <div class="dtype-box">
+        <div class="dtype-title">日タイプ別ルール（前日夜か当日朝に確認）</div>
+        <div class="dtype-row"><span class="dtype-label">☕ バイト＋ジム日</span>Glyphs 1文字 or コロソ1本、どちらか1つ</div>
+        <div class="dtype-row"><span class="dtype-label">🌅 朝が空いている日</span>カフェでコロソ視聴 or 制作 60〜90分</div>
+        <div class="dtype-row"><span class="dtype-label">🌆 12〜18バイト日</span>午前中にコロソ視聴か制作。帰宅後は無理しない</div>
+        <div class="dtype-row"><span class="dtype-label">🍽 外食・社交日</span>完全オフ。罪悪感なし</div>
+      </div>
+      <div class="sched-rule">
+        🗂 <strong>制作のルール（Phase 1から適用）</strong><br>
+        フォルダ名は「ゴミ箱」か「練習帳」にする。<br>
+        コロソを見た当日か翌日に、30分以内で模倣を1個作って閉じる。<br>
+        完成してなくていい。時間が来たら強制終了して保存。<br>
+        作った後は見直さない。ファイルを閉じてカウントだけ増やす。
+      </div>
+
+      <div class="sched-week" style="margin-top:12px;">
+        <div class="sched-week-title sw-p1">4/7–4/12（スタート週）</div>
+        <ul class="sched-items">
+          <li>コロソ講座1：2本視聴</li>
+          <li>Glyphs：週3回・1文字（数字かひらがな・15分）</li>
+          <li>制作：コロソを見た翌日に30分で模倣1個・閉じる</li>
+          <li>本：週2回20〜30分</li>
+        </ul>
+      </div>
+      <div class="sched-week">
+        <div class="sched-week-title sw-p1">4/13–4/19（継続確認週）</div>
+        <ul class="sched-items">
+          <li>4/13はジム休み → まとめて視聴日にする</li>
+          <li>コロソ講座1：2本（13日にまとめて or 週に分けて）</li>
+          <li>Glyphs：週4回へ引き上げ</li>
+          <li>制作：コロソを見たら翌日に30分模倣</li>
+          <li>4/18 HBお祝い → 勉強なし</li>
+        </ul>
+      </div>
+      <div class="sched-week">
+        <div class="sched-week-title sw-warn">4/20–4/25（韓国旅行）⚠️ 挫折ポイント①</div>
+        <ul class="sched-items">
+          <li>4/20〜21：Glyphsと本だけでいい</li>
+          <li>4/22〜25：完全休暇・勉強ゼロでOK</li>
+        </ul>
+        <div class="sched-note">旅行は計画済み。罪悪感不要。帰国後に何回立て直せたかを数えるのが自信になる。</div>
+      </div>
+      <div class="sched-week">
+        <div class="sched-week-title sw-warn">4/26–5/2（リスタート週）← 最重要</div>
+        <ul class="sched-items">
+          <li>4/26帰国翌日：無理しない。Glyphs1文字だけでいい</li>
+          <li>コロソ講座1：2本（4/29祝日にまとめて）</li>
+          <li>Glyphs：週4回（ペース取り戻す）</li>
+          <li>制作：余裕があれば1個。なくていい</li>
+          <li>5/1明菜さん帰宅 → 社交も入るので無理しない</li>
+        </ul>
+      </div>
+      <div class="sched-week">
+        <div class="sched-week-title sw-warn">5/3–5/5（旅行）</div>
+        <ul class="sched-items"><li>完全休み。計画済みなので罪悪感不要。</li></ul>
+      </div>
+    </div>
+  </div>
+
+  <div class="sched-phase">
+    <div class="sched-phase-head" onclick="toggleSched(1)">
+      <div class="sched-phase-dot" style="background:var(--p2c);"></div>
+      <div class="sched-phase-title">Phase 2 — 制作・量産</div>
+      <div class="sched-phase-period">5/6 → 6月末</div>
+      <div class="sched-phase-arr">▼</div>
+    </div>
+    <div class="sched-phase-body">
+      <div class="sched-week">
+        <div class="sched-week-title sw-p2">5月の日タイプ別ルール</div>
+        <div class="dtype-box" style="margin-top:6px;">
+          <div class="dtype-row"><span class="dtype-label">☕ バイト＋ジム日</span>Glyphs or 制作 30〜45分</div>
+          <div class="dtype-row"><span class="dtype-label">🌅 朝が空いている日</span>カフェで制作 60〜90分</div>
+          <div class="dtype-row"><span class="dtype-label">🌆 12〜18バイト日</span>午前中に制作1個（30分）</div>
+          <div class="dtype-row"><span class="dtype-label">🍽 外食・社交日</span>完全オフ</div>
+        </div>
+      </div>
+      <div class="sched-week">
+        <div class="sched-week-title sw-p2">コロソの進め方</div>
+        <ul class="sched-items">
+          <li>講座1を週2〜3本ペースで進め、5月中旬〜下旬に完走</li>
+          <li>講座1完走後に講座2の1本目を始める</li>
+          <li>コロソを見たら当日か翌日に30分で模倣1個・閉じる</li>
+        </ul>
+      </div>
+      <div class="sched-week">
+        <div class="sched-week-title sw-p2">作品目標（最低ライン）</div>
+        <ul class="sched-items">
+          <li>5月末：累計5〜7本（ゴミでいい・模倣でいい）</li>
+          <li>6月中旬：メンターへ初見せ（12〜15本が理想）</li>
+          <li>6月末：累計12〜15本</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <div class="sched-phase">
+    <div class="sched-phase-head" onclick="toggleSched(2)">
+      <div class="sched-phase-dot" style="background:var(--p3c);"></div>
+      <div class="sched-phase-title">Phase 3 — メンター本格稼働</div>
+      <div class="sched-phase-period">7月〜（スキル次第）</div>
+      <div class="sched-phase-arr">▼</div>
+    </div>
+    <div class="sched-phase-body">
+      <div class="sched-week">
+        <div class="sched-week-title" style="background:#fdf4f4;color:#aa4a4a;">転職準備</div>
+        <ul class="sched-items">
+          <li>メンターのOKが出たタイミングでスタート</li>
+          <li>追加作品の制作（メンター指導下）</li>
+          <li>ポートフォリオサイト作成</li>
+          <li>面接対策・自己PR整理</li>
+          <li>求人リサーチ・応募</li>
+        </ul>
+        <div class="sched-note">現実的な見通し：メンター開始は早くて7月・普通に8〜9月。転職活動開始はメンターから半年後が目安（2027年初頭〜春）。ペースより「続けた人が転職できる」。</div>
+      </div>
+    </div>
+  </div>`;
+
+  return`<div class="rm-wrap">
+    <div class="rm-legend">
+      <div class="rm-leg-item"><div class="rm-leg-sq" style="background:rgba(42,122,58,0.35);"></div>Phase 1</div>
+      <div class="rm-leg-item"><div class="rm-leg-sq" style="background:rgba(26,90,170,0.35);"></div>Phase 2</div>
+      <div class="rm-leg-item"><div class="rm-leg-sq" style="background:rgba(170,74,74,0.35);"></div>Phase 3</div>
+      <div class="rm-leg-item"><div style="width:14px;height:8px;background:#555;opacity:0.6;border-radius:2px;"></div>現在地</div>
+      <div style="font-size:10px;color:var(--muted);">目標数を変えると全長が変わる</div>
+    </div>
+    ${barsHtml}
+    ${schedHtml}
+  </div>`;
+}
+
+function render(){
+  const m=state.month;
+  const showMonth=['calendar','progress'].includes(state.view);
+  let content='';
+  if(state.view==='calendar') content=renderCalendar(m);
+  else if(state.view==='progress') content=renderProgress(m);
+  else if(state.view==='goals') content=renderGoals();
+  else content=renderRoadmap();
+  document.getElementById('root').innerHTML=`
+    <div class="main-tabs">
+      <button class="main-tab ${state.view==='calendar'?'active':''}"  onclick="sv('calendar')">📅 カレンダー</button>
+      <button class="main-tab ${state.view==='progress'?'active':''}"  onclick="sv('progress')">📊 習慣</button>
+      <button class="main-tab ${state.view==='goals'?'active':''}"     onclick="sv('goals')">🎯 目標</button>
+      <button class="main-tab ${state.view==='roadmap'?'active':''}"   onclick="sv('roadmap')">🗺 計画</button>
+    </div>
+    ${showMonth?`<div class="month-tabs">${[4,5].map(mo=>`<button class="month-tab ${mo===m?'active':''}" onclick="sm(${mo})">${mo}月</button>`).join('')}</div>`:''}
+    ${content}`;
+}
+
+window.sv=v=>{state.view=v;render();};
+window.sm=m=>{state.month=m;render();};
+window.toggleHabit=toggleHabit;
+window.toggleLock=toggleLock;
+window.incGoal=incGoal;
+window.decGoal=decGoal;
+window.editTarget=editTarget;
+window.toggleSched=toggleSched;
+
+(async()=>{await load();render();})();
+</script>
+</body>
+</html>
