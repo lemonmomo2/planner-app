@@ -195,6 +195,33 @@ strong{color:var(--text);}
 .memo-textarea:focus { outline:none; border-color:var(--koroso); }
 .memo-saved { font-size:9px; color:var(--muted); margin-top:4px; min-height:13px; }
 .memo-dot { font-size:8px; color:var(--koroso); line-height:1; }
+.cal-cell.is-selected { border-color:var(--koroso)!important; box-shadow:0 0 0 2px rgba(26,90,170,.12); }
+.memo-help { font-size:10px; color:var(--muted); margin-top:6px; line-height:1.6; }
+.memo-month-card {
+  background:var(--surface); border:1px solid var(--border);
+  border-radius:10px; padding:12px 14px; margin-top:14px;
+}
+.memo-month-head {
+  display:flex; justify-content:space-between; align-items:center; gap:10px; margin-bottom:10px;
+}
+.memo-month-title { font-size:11px; font-weight:600; color:var(--text); }
+.memo-month-count { font-size:10px; color:var(--muted); }
+.memo-table-wrap { overflow-x:auto; }
+.memo-table {
+  width:100%; border-collapse:collapse; font-size:11px;
+}
+.memo-table th, .memo-table td {
+  border-top:1px solid var(--border); padding:9px 8px; text-align:left; vertical-align:top;
+}
+.memo-table th { font-size:10px; color:var(--muted); font-weight:600; background:#faf7f2; }
+.memo-table tr.is-selected td { background:#f3f7fd; }
+.memo-table-date-btn {
+  border:none; background:none; padding:0; margin:0; font:inherit; color:var(--koroso);
+  cursor:pointer; text-decoration:underline; text-underline-offset:2px;
+}
+.memo-table-date-btn:hover { opacity:.8; }
+.memo-empty { font-size:11px; color:var(--muted); line-height:1.7; padding:8px 0 2px; }
+.memo-note-cell { white-space:pre-wrap; line-height:1.7; }
 </style>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
@@ -303,6 +330,7 @@ let state={
   goals:[],
   tasks:{},
   notes:{},
+  selectedMemo:{ month:TODAY.getMonth()+1, day:TODAY.getDate() },
   user:null,
   loading:true
 };
@@ -383,8 +411,8 @@ const sp=(m,d)=>SP[`2026-${m}-${d}`]||null;
 function isLocked(m,d){if(state.locked[`2026-${m}-${d}`])return true;const s=sp(m,d);return s&&(s.type==='travel'||s.type==='nostudy');}
 const hk=(id,m,d)=>`${id}-${m}-${d}`;
 const isDone=(id,m,d)=>!!state.data[hk(id,m,d)];
-function toggleHabit(id,m,d){if(isLocked(m,d))return;state.data[hk(id,m,d)]=!state.data[hk(id,m,d)];save();render();}
-function toggleLock(m,d){const s=sp(m,d);if(s&&(s.type==='travel'||s.type==='nostudy'))return;state.locked[`2026-${m}-${d}`]=!state.locked[`2026-${m}-${d}`];save();render();}
+function toggleHabit(e,id,m,d){if(e)e.stopPropagation();if(isLocked(m,d))return;state.data[hk(id,m,d)]=!state.data[hk(id,m,d)];save();render();}
+function toggleLock(e,m,d){if(e)e.stopPropagation();const s=sp(m,d);if(s&&(s.type==='travel'||s.type==='nostudy'))return;state.locked[`2026-${m}-${d}`]=!state.locked[`2026-${m}-${d}`];save();render();}
 function habitPct(id){let done=0,total=0;for(let m=4;m<=5;m++)for(let d=1;d<=daysIn(m);d++){if(isLocked(m,d)||isFut(m,d))continue;if(m===4&&d<7)continue;total++;if(isDone(id,m,d))done++;}return total>0?Math.round(done/total*100):0;}
 function habitOverallPct(){return Math.round(HABITS.reduce((a,h)=>a+habitPct(h.id),0)/HABITS.length);}
 function streak(){let s=0;const d=new Date(TODAY);for(let i=0;i<90;i++){const m=d.getMonth()+1,day=d.getDate();if(!isLocked(m,day)){if(!HABITS.some(h=>isDone(h.id,m,day)))break;s++;}d.setDate(d.getDate()-1);}return s;}
@@ -423,30 +451,87 @@ function updateWeekProgress(weekId){
 
 let _noteSaveTimer = null;
 function noteKey(m,d){ return `${m}-${d}`; }
+function escapeHtml(str){
+  return String(str ?? '')
+    .replace(/&/g,'&amp;')
+    .replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;')
+    .replace(/"/g,'&quot;')
+    .replace(/'/g,'&#39;');
+}
+function notePreview(str){
+  const oneLine = String(str ?? '').replace(/\s+/g,' ').trim();
+  return oneLine.length > 80 ? oneLine.slice(0,80) + '…' : oneLine;
+}
+function currentSelectedMemo(m){
+  if(state.selectedMemo && state.selectedMemo.month === m){
+    const safeDay = Math.min(state.selectedMemo.day, daysIn(m));
+    return { month:m, day:safeDay };
+  }
+  if(m === TODAY.getMonth()+1){
+    return { month:m, day:TODAY.getDate() };
+  }
+  const noteDays = Object.keys(state.notes || {})
+    .map(k => {
+      const parts = k.split('-').map(Number);
+      return { month:parts[0], day:parts[1] };
+    })
+    .filter(x => x.month === m && x.day >= 1 && x.day <= daysIn(m))
+    .sort((a,b)=>a.day-b.day);
+  if(noteDays.length) return noteDays[0];
+  return { month:m, day:1 };
+}
+function setSelectedMemoDate(m,d){
+  state.selectedMemo = { month:m, day:d };
+  render();
+}
 
 function onNoteInput(m,d){
   const el = document.getElementById('memo-ta');
   if(!el) return;
   const val = el.value;
   clearTimeout(_noteSaveTimer);
+  const saved = document.getElementById('memo-saved');
+  if(saved) saved.textContent = '保存中…';
   _noteSaveTimer = setTimeout(()=>{
     const key = noteKey(m,d);
-    state.notes[key] = val;
+    if(val.trim()){
+      state.notes[key] = val;
+    } else {
+      delete state.notes[key];
+    }
     save();
-    const saved = document.getElementById('memo-saved');
-    if(saved){ saved.textContent='保存しました ✓'; setTimeout(()=>{ if(saved) saved.textContent=''; }, 1500); }
-    // Update note indicator on calendar cell
+    const savedEl = document.getElementById('memo-saved');
+    if(savedEl){
+      savedEl.textContent='保存しました ✓';
+      setTimeout(()=>{ if(savedEl) savedEl.textContent=''; }, 1500);
+    }
     const dot = document.getElementById('notedot-'+m+'-'+d);
-    if(dot) dot.style.display = val ? 'inline' : 'none';
+    if(dot) dot.style.display = val.trim() ? 'inline' : 'none';
+    const row = document.getElementById('memo-row-'+m+'-'+d);
+    if(row){
+      const cell = row.querySelector('.memo-note-cell');
+      if(cell) cell.innerHTML = val.trim() ? escapeHtml(val) : '—';
+    } else {
+      const empty = document.getElementById('memo-month-empty');
+      if(empty && val.trim()) render();
+    }
+    const count = document.getElementById('memo-month-count');
+    if(count){
+      const monthCount = Object.keys(state.notes || {})
+        .filter(k => String(k).startsWith(m + '-') && (state.notes[k] || '').trim())
+        .length;
+      count.textContent = `${monthCount}件`;
+    }
   }, 600);
 }
-
 function toggleSched(i){const b=document.querySelectorAll('.sched-phase-body')[i];const a=document.querySelectorAll('.sched-phase-arr')[i];if(b){b.classList.toggle('open');if(a)a.textContent=b.classList.contains('open')?'▲':'▼';}}
 
 const WD_H=['月','火','水','木','金','土','日'];
 const WD_S=['日','月','火','水','木','金','土'];
 
 function renderCalendar(m){
+  const selected = currentSelectedMemo(m);
   const n=daysIn(m),off=calOff(m,1);
   let cells=WD_H.map((nm,i)=>`<div class="cal-wdh ${i===5?'sat':i===6?'sun':''}">${nm}</div>`).join('');
   for(let i=0;i<off;i++)cells+='<div class="cal-cell empty"></div>';
@@ -454,20 +539,29 @@ function renderCalendar(m){
     const s=sp(m,d),locked=isLocked(m,d),manLocked=!!state.locked[`2026-${m}-${d}`];
     const isTravel=s&&s.type==='travel',isPreset=s&&s.type==='nostudy',isReview=s&&s.type==='review';
     const isFree=s&&s.type==='free',fut=isFut(m,d),today=isToday(m,d),past=isPast(m,d),wend=isWend(m,d);
+    const isSelected = selected.day===d;
     let cc='cal-cell';
     if(isTravel||isPreset||manLocked)cc+=' c-nostudy';
     if(isTravel)cc+=' c-travel';if(isFree)cc+=' c-free';if(isReview)cc+=' c-review';
     if(today)cc+=' c-today';if(past)cc+=' c-past';
+    if(isSelected)cc+=' is-selected';
     const evCls=isTravel?'ev-travel':isFree?'ev-free':isReview?'ev-review':s?.type==='start'?'ev-start':'';
     const evHtml=s?`<div class="cal-ev ${evCls}">${s.label}</div>`:'';
     const nsHtml=(locked||manLocked)?'<div class="cal-nostudy-label">勉強なし</div>':'';
     let dotsHtml='';
-    if(!locked&&!manLocked){const dots=HABITS.map(h=>`<div class="cal-dot ${h.dot} ${isDone(h.id,m,d)?'filled':''}" style="${fut?'opacity:.5':''}" onclick="toggleHabit('${h.id}',${m},${d})"></div>`).join('');
-    const hasNote = !!(state.notes && state.notes[noteKey(m,d)]);
-    dotsHtml=`<div class="cal-dots">${dots}<span id="notedot-${m}-${d}" class="memo-dot" style="display:${hasNote?'inline':'none'};margin-left:2px;" title="メモあり">✎</span></div>`;}
+    if(!locked&&!manLocked){
+      const dots=HABITS.map(h=>`<div class="cal-dot ${h.dot} ${isDone(h.id,m,d)?'filled':''}" style="${fut?'opacity:.5':''}" onclick="toggleHabit(event,'${h.id}',${m},${d})"></div>`).join('');
+      const hasNote = !!(state.notes && state.notes[noteKey(m,d)] && state.notes[noteKey(m,d)].trim());
+      dotsHtml=`<div class="cal-dots">${dots}<span id="notedot-${m}-${d}" class="memo-dot" style="display:${hasNote?'inline':'none'};margin-left:2px;" title="メモあり">✎</span></div>`;
+    }
+    if((locked||manLocked) && state.notes && state.notes[noteKey(m,d)] && state.notes[noteKey(m,d)].trim()){
+      dotsHtml=`<div class="cal-dots"><span id="notedot-${m}-${d}" class="memo-dot" title="メモあり">✎</span></div>`;
+    }
     let lockBtn='';
-    if(!isTravel&&!isPreset&&(wend||manLocked)){lockBtn=`<button class="lock-btn ${manLocked?'is-locked':''}" onclick="toggleLock(${m},${d})">${manLocked?'🔒':'🔓'}</button>`;}
-    cells+=`<div class="${cc}"><div class="cal-top"><span class="cal-num">${d}${fut?'<span style="font-size:7px;color:var(--subtle)"> 予</span>':''}</span>${today?'<div class="cal-today-pip"></div>':lockBtn}</div>${evHtml}${nsHtml}${dotsHtml}</div>`;
+    if(!isTravel&&!isPreset&&(wend||manLocked)){
+      lockBtn=`<button class="lock-btn ${manLocked?'is-locked':''}" onclick="toggleLock(event,${m},${d})">${manLocked?'🔒':'🔓'}</button>`;
+    }
+    cells+=`<div class="${cc}" onclick="setSelectedMemoDate(${m},${d})"><div class="cal-top"><span class="cal-num">${d}${fut?'<span style="font-size:7px;color:var(--subtle)"> 予</span>':''}</span>${today?'<div class="cal-today-pip"></div>':lockBtn}</div>${evHtml}${nsHtml}${dotsHtml}</div>`;
   }
   return`<div class="legend">
     <div class="legend-item"><div class="leg-sq" style="background:#fff5e8;border-color:#f0d8b0;"></div>旅行</div>
@@ -477,25 +571,57 @@ function renderCalendar(m){
   </div>
   <div class="legend">${HABITS.map(h=>`<div class="legend-item"><div class="leg-ci" style="background:${h.color};border:2px solid ${h.color};"></div>${h.label}</div>`).join('')}</div>
   <div class="cal-grid">${cells}</div>
-  ${renderMemo(m)}`;
+  ${renderMemo(m)}
+  ${renderMemoMonthTable(m)}`;
 }
 
 function renderMemo(m){
-  const tm = TODAY.getMonth()+1;
-  const td = TODAY.getDate();
-  const key = noteKey(tm, td);
+  const sel = currentSelectedMemo(m);
+  const key = noteKey(sel.month, sel.day);
   const val = (state.notes && state.notes[key]) || '';
-  const dateStr = `${tm}月${td}日（今日）`;
+  const isTodaySel = isToday(sel.month, sel.day);
+  const dateStr = `${sel.month}月${sel.day}日${isTodaySel ? '（今日）' : ''}`;
   return `<div class="memo-card" style="margin-top:14px;">
     <div class="memo-header">
-      <span class="memo-title">✎ 今日のメモ</span>
+      <span class="memo-title">✎ ${isTodaySel ? '今日のメモ' : '選択した日のメモ'}</span>
       <span class="memo-date">${dateStr}</span>
     </div>
-    <textarea id="memo-ta" class="memo-textarea" placeholder="今日やったこと・気づいたこと・一言でもOK" oninput="onNoteInput(${tm},${td})">${val}</textarea>
+    <textarea id="memo-ta" class="memo-textarea" placeholder="その日に終えたこと・気づいたこと・一言でもOK" oninput="onNoteInput(${sel.month},${sel.day})">${escapeHtml(val)}</textarea>
     <div id="memo-saved" class="memo-saved"></div>
+    <div class="memo-help">カレンダーの日付をタップすると、その日のメモを表示・編集できます。</div>
   </div>`;
 }
 
+function renderMemoMonthTable(m){
+  const rows = [];
+  for(let d=1; d<=daysIn(m); d++){
+    const raw = (state.notes && state.notes[noteKey(m,d)]) || '';
+    if(raw && raw.trim()){
+      rows.push({ day:d, text:raw });
+    }
+  }
+  const selected = currentSelectedMemo(m);
+  return `<div class="memo-month-card">
+    <div class="memo-month-head">
+      <div class="memo-month-title">🗂 ${m}月のメモ一覧</div>
+      <div id="memo-month-count" class="memo-month-count">${rows.length}件</div>
+    </div>
+    ${rows.length ? `
+      <div class="memo-table-wrap">
+        <table class="memo-table">
+          <thead>
+            <tr><th style="width:86px;">日付</th><th>メモ</th></tr>
+          </thead>
+          <tbody>
+            ${rows.map(row=>`<tr id="memo-row-${m}-${row.day}" class="${selected.day===row.day?'is-selected':''}">
+              <td><button class="memo-table-date-btn" onclick="setSelectedMemoDate(${m},${row.day})">${m}/${row.day}</button></td>
+              <td class="memo-note-cell">${escapeHtml(row.text)}</td>
+            </tr>`).join('')}
+          </tbody>
+        </table>
+      </div>` : `<div id="memo-month-empty" class="memo-empty">この月のメモはまだありません。カレンダーの日付を選んで記録すると、ここに一覧表示されます。</div>`}
+  </div>`;
+}
 function renderAuth(){
   document.getElementById('root').innerHTML = `
     <div style="max-width:420px;margin:40px auto;background:#fff;border:1px solid #e4dbd0;border-radius:12px;padding:20px;">
@@ -796,7 +922,11 @@ function render(){
 }
 
 window.sv=v=>{state.view=v;render();};
-window.sm=m=>{state.month=m;render();};
+window.sm=m=>{
+  state.month=m;
+  state.selectedMemo = currentSelectedMemo(m);
+  render();
+};
 window.toggleHabit=toggleHabit;
 window.toggleLock=toggleLock;
 window.incGoal=incGoal;
@@ -805,6 +935,7 @@ window.editTarget=editTarget;
 window.toggleSched=toggleSched;
 window.toggleTask=toggleTask;
 window.onNoteInput=onNoteInput;
+window.setSelectedMemoDate=setSelectedMemoDate;
 
 (async () => {
   const { data } = await sb.auth.getSession();
