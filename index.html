@@ -153,6 +153,48 @@ body { font-family:'Noto Sans JP','Hiragino Sans',sans-serif; background:var(--b
 .tip:last-child{margin-bottom:0;}
 .tip-i{font-size:14px;flex-shrink:0;}
 strong{color:var(--text);}
+
+/* ── Task checkboxes in schedule ── */
+.task-item {
+  display:flex; align-items:flex-start; gap:8px;
+  padding:5px 4px; border-radius:5px; cursor:pointer;
+  transition:background .1s; font-size:11px; line-height:1.6; color:#5a5048;
+}
+.task-item:hover { background:#f5f0ea; }
+.task-item.done { color:var(--subtle); }
+.task-item.done .task-text { text-decoration:line-through; }
+.task-cb {
+  width:16px; height:16px; border-radius:4px; border:1.5px solid var(--border);
+  flex-shrink:0; margin-top:2px; display:flex; align-items:center; justify-content:center;
+  font-size:9px; transition:all .1s; background:var(--surface);
+}
+.task-item.done .task-cb { background:var(--p1c); border-color:var(--p1c); color:#fff; }
+.week-progress {
+  display:flex; align-items:center; gap:8px; margin-bottom:7px;
+}
+.week-prog-bar { flex:1; height:4px; background:var(--border); border-radius:2px; overflow:hidden; }
+.week-prog-fill { height:100%; border-radius:2px; transition:width .3s; }
+.week-prog-label { font-size:9px; color:var(--muted); white-space:nowrap; }
+
+/* ── Daily memo ── */
+.memo-card {
+  background:var(--surface); border:1px solid var(--border);
+  border-radius:10px; padding:12px 14px; margin-bottom:14px;
+}
+.memo-header {
+  display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;
+}
+.memo-title { font-size:11px; font-weight:600; color:var(--text); }
+.memo-date  { font-size:10px; color:var(--muted); }
+.memo-textarea {
+  width:100%; border:1px solid var(--border); border-radius:7px;
+  padding:8px 10px; font-size:11px; font-family:inherit; color:var(--text);
+  background:var(--bg); resize:none; line-height:1.7; min-height:64px;
+  transition:border-color .15s;
+}
+.memo-textarea:focus { outline:none; border-color:var(--koroso); }
+.memo-saved { font-size:9px; color:var(--muted); margin-top:4px; min-height:13px; }
+.memo-dot { font-size:8px; color:var(--koroso); line-height:1; }
 </style>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
@@ -208,12 +250,59 @@ const SP = {
   '2026-5-21':{label:'📋 見直し',type:'review'},
 };
 
+// Week tasks definition for schedule tab
+const WEEK_TASKS = [
+  { id:'w1', label:'4/7–4/12（スタート週）', cls:'sw-p1', phase:0,
+    tasks:[
+      {id:'w1-1', text:'コロソ講座1：2本視聴'},
+      {id:'w1-2', text:'Glyphs：週3回・1文字'},
+      {id:'w1-3', text:'制作：模倣1個・閉じる'},
+      {id:'w1-4', text:'本：週2回20〜30分'},
+    ]},
+  { id:'w2', label:'4/13–4/19（継続確認週）', cls:'sw-p1', phase:0,
+    tasks:[
+      {id:'w2-1', text:'コロソ講座1：2本'},
+      {id:'w2-2', text:'Glyphs：週4回'},
+      {id:'w2-3', text:'制作：模倣1個'},
+    ]},
+  { id:'w3', label:'4/20–4/25（旅行週）', cls:'sw-warn', phase:0,
+    tasks:[
+      {id:'w3-1', text:'4/20〜21：Glyphsと本だけ'},
+      {id:'w3-2', text:'4/22〜25：完全休暇OK'},
+    ]},
+  { id:'w4', label:'4/26–5/2（リスタート週）', cls:'sw-warn', phase:0,
+    tasks:[
+      {id:'w4-1', text:'帰国翌日：Glyphs1文字だけでOK'},
+      {id:'w4-2', text:'コロソ講座1：2本（祝日にまとめて）'},
+      {id:'w4-3', text:'Glyphs：週4回取り戻す'},
+    ]},
+  { id:'w5', label:'5/3–5/5（旅行）', cls:'sw-warn', phase:0,
+    tasks:[
+      {id:'w5-1', text:'完全休み・罪悪感不要'},
+    ]},
+  { id:'w6', label:'5月 制作フェーズ', cls:'sw-p2', phase:1,
+    tasks:[
+      {id:'w6-1', text:'コロソ講座1 完走（週2〜3本）'},
+      {id:'w6-2', text:'講座1完走後に講座2スタート'},
+      {id:'w6-3', text:'Glyphs：週5回へ引き上げ'},
+      {id:'w6-4', text:'作品5〜7本（5月末目標）'},
+    ]},
+  { id:'w7', label:'6月 量産フェーズ', cls:'sw-p2', phase:1,
+    tasks:[
+      {id:'w7-1', text:'作品12〜15本（6月末目標）'},
+      {id:'w7-2', text:'6月中旬：メンターへ初見せ'},
+      {id:'w7-3', text:'コロソ講座2 継続'},
+    ]},
+];
+
 let state={
   view:'calendar',
   month:4,
   data:{},
   locked:{},
   goals:[],
+  tasks:{},
+  notes:{},
   user:null,
   loading:true
 };
@@ -226,7 +315,7 @@ async function load(){
 
   const { data, error } = await sb
     .from('app_state')
-    .select('data, locked, goals')
+    .select('data, locked, goals, tasks, notes')
     .eq('user_id', state.user.id)
     .maybeSingle();
 
@@ -239,6 +328,8 @@ async function load(){
   if(data){
     state.data = data.data || {};
     state.locked = data.locked || {};
+    state.tasks = data.tasks || {};
+    state.notes = data.notes || {};
     state.goals = GOALS.map(defaultGoal => {
       const savedGoal = (data.goals || []).find(g => g.id === defaultGoal.id);
       return savedGoal
@@ -248,6 +339,8 @@ async function load(){
   } else {
     state.data = {};
     state.locked = {};
+    state.tasks = {};
+    state.notes = {};
     state.goals = GOALS.map(g => ({ ...g }));
     await save();
   }
@@ -265,6 +358,8 @@ async function save(){
       current: g.current,
       target: g.target
     })),
+    tasks: state.tasks,
+    notes: state.notes,
     updated_at: new Date().toISOString()
   };
 
@@ -297,6 +392,55 @@ function goalOverallPct(){if(!state.goals.length)return 0;return Math.round(stat
 function incGoal(id){const g=state.goals.find(g=>g.id===id);if(g){g.current=Math.min(g.current+1,g.target+50);save();render();}}
 function decGoal(id){const g=state.goals.find(g=>g.id===id);if(g&&g.current>0){g.current--;save();render();}}
 function editTarget(id){const g=state.goals.find(g=>g.id===id);if(!g)return;const val=prompt(`「${g.label}」の目標数（現在:${g.target}${g.unit}）\n変更するとロードマップのバーも変わります`,g.target);if(val!==null){const n=parseInt(val);if(!isNaN(n)&&n>0){g.target=n;save();render();}}}
+function toggleTask(id){
+  state.tasks[id] = !state.tasks[id];
+  save();
+  // Re-render only the schedule without full page re-render for snappiness
+  const el = document.getElementById('task-'+id);
+  if(el){
+    const done = state.tasks[id];
+    el.classList.toggle('done', done);
+    el.querySelector('.task-cb').textContent = done ? '✓' : '';
+    el.querySelector('.task-cb').style.background = done ? 'var(--p1c)' : '';
+    el.querySelector('.task-cb').style.borderColor = done ? 'var(--p1c)' : '';
+    // Update week progress bar
+    const weekId = id.replace(/-\d+$/, '');
+    updateWeekProgress(weekId);
+  }
+}
+
+function updateWeekProgress(weekId){
+  const week = WEEK_TASKS.find(w => w.id === weekId);
+  if(!week) return;
+  const total = week.tasks.length;
+  const done = week.tasks.filter(t => state.tasks[t.id]).length;
+  const pct = Math.round(done/total*100);
+  const bar = document.getElementById('wpbar-'+weekId);
+  const lbl = document.getElementById('wplbl-'+weekId);
+  if(bar) bar.style.width = pct+'%';
+  if(lbl) lbl.textContent = `${done}/${total} 完了`;
+}
+
+let _noteSaveTimer = null;
+function noteKey(m,d){ return `${m}-${d}`; }
+
+function onNoteInput(m,d){
+  const el = document.getElementById('memo-ta');
+  if(!el) return;
+  const val = el.value;
+  clearTimeout(_noteSaveTimer);
+  _noteSaveTimer = setTimeout(()=>{
+    const key = noteKey(m,d);
+    state.notes[key] = val;
+    save();
+    const saved = document.getElementById('memo-saved');
+    if(saved){ saved.textContent='保存しました ✓'; setTimeout(()=>{ if(saved) saved.textContent=''; }, 1500); }
+    // Update note indicator on calendar cell
+    const dot = document.getElementById('notedot-'+m+'-'+d);
+    if(dot) dot.style.display = val ? 'inline' : 'none';
+  }, 600);
+}
+
 function toggleSched(i){const b=document.querySelectorAll('.sched-phase-body')[i];const a=document.querySelectorAll('.sched-phase-arr')[i];if(b){b.classList.toggle('open');if(a)a.textContent=b.classList.contains('open')?'▲':'▼';}}
 
 const WD_H=['月','火','水','木','金','土','日'];
@@ -318,7 +462,9 @@ function renderCalendar(m){
     const evHtml=s?`<div class="cal-ev ${evCls}">${s.label}</div>`:'';
     const nsHtml=(locked||manLocked)?'<div class="cal-nostudy-label">勉強なし</div>':'';
     let dotsHtml='';
-    if(!locked&&!manLocked){const dots=HABITS.map(h=>`<div class="cal-dot ${h.dot} ${isDone(h.id,m,d)?'filled':''}" style="${fut?'opacity:.5':''}" onclick="toggleHabit('${h.id}',${m},${d})"></div>`).join('');dotsHtml=`<div class="cal-dots">${dots}</div>`;}
+    if(!locked&&!manLocked){const dots=HABITS.map(h=>`<div class="cal-dot ${h.dot} ${isDone(h.id,m,d)?'filled':''}" style="${fut?'opacity:.5':''}" onclick="toggleHabit('${h.id}',${m},${d})"></div>`).join('');
+    const hasNote = !!(state.notes && state.notes[noteKey(m,d)]);
+    dotsHtml=`<div class="cal-dots">${dots}<span id="notedot-${m}-${d}" class="memo-dot" style="display:${hasNote?'inline':'none'};margin-left:2px;" title="メモあり">✎</span></div>`;}
     let lockBtn='';
     if(!isTravel&&!isPreset&&(wend||manLocked)){lockBtn=`<button class="lock-btn ${manLocked?'is-locked':''}" onclick="toggleLock(${m},${d})">${manLocked?'🔒':'🔓'}</button>`;}
     cells+=`<div class="${cc}"><div class="cal-top"><span class="cal-num">${d}${fut?'<span style="font-size:7px;color:var(--subtle)"> 予</span>':''}</span>${today?'<div class="cal-today-pip"></div>':lockBtn}</div>${evHtml}${nsHtml}${dotsHtml}</div>`;
@@ -330,7 +476,25 @@ function renderCalendar(m){
     <div class="legend-item">🔓週末タップで休みに切替</div>
   </div>
   <div class="legend">${HABITS.map(h=>`<div class="legend-item"><div class="leg-ci" style="background:${h.color};border:2px solid ${h.color};"></div>${h.label}</div>`).join('')}</div>
-  <div class="cal-grid">${cells}</div>`;
+  <div class="cal-grid">${cells}</div>
+  ${renderMemo(m)}`;
+}
+
+function renderMemo(m){
+  const tm = TODAY.getMonth()+1;
+  const td = TODAY.getDate();
+  const key = noteKey(tm, td);
+  const val = (state.notes && state.notes[key]) || '';
+  const dateStr = `${tm}月${td}日（今日）`;
+  return `<div class="memo-card" style="margin-top:14px;">
+    <div class="memo-header">
+      <span class="memo-title">✎ 今日のメモ</span>
+      <span class="memo-date">${dateStr}</span>
+    </div>
+    <textarea id="memo-ta" class="memo-textarea" placeholder="今日やったこと・気づいたこと・一言でもOK" oninput="onNoteInput(${tm},${td})">${val}</textarea>
+    <div id="memo-saved" class="memo-saved"></div>
+  </div>`;
+}
 }
 
 function renderAuth(){
@@ -465,6 +629,32 @@ function renderGoals(){
   </div>`;}).join('')}`;
 }
 
+function renderWeekTasks(weekIds){
+  return weekIds.map(wid => {
+    const week = WEEK_TASKS.find(w => w.id === wid);
+    if(!week) return '';
+    const total = week.tasks.length;
+    const done = week.tasks.filter(t => state.tasks[t.id]).length;
+    const pct = Math.round(done/total*100);
+    const barColor = done===total ? 'var(--p1c)' : 'var(--p2c)';
+    const tasksHtml = week.tasks.map(t => {
+      const isDoneT = !!state.tasks[t.id];
+      return `<div id="task-${t.id}" class="task-item ${isDoneT?'done':''}" onclick="toggleTask('${t.id}')">
+        <div class="task-cb" style="${isDoneT?'background:var(--p1c);border-color:var(--p1c);color:#fff;':''}">${isDoneT?'✓':''}</div>
+        <span class="task-text">${t.text}</span>
+      </div>`;
+    }).join('');
+    return `<div class="sched-week" style="margin-top:10px;">
+      <div class="sched-week-title ${week.cls}">${week.label}</div>
+      <div class="week-progress">
+        <div class="week-prog-bar"><div id="wpbar-${wid}" class="week-prog-fill" style="width:${pct}%;background:${barColor};"></div></div>
+        <span id="wplbl-${wid}" class="week-prog-label">${done}/${total} 完了</span>
+      </div>
+      ${tasksHtml}
+    </div>`;
+  }).join('');
+}
+
 function renderRoadmap(){
   const goalsMap={};state.goals.forEach(g=>goalsMap[g.id]=g);
   function makeBar(gd,gs){
@@ -523,48 +713,7 @@ function renderRoadmap(){
         完成してなくていい。時間が来たら強制終了して保存。<br>
         作った後は見直さない。ファイルを閉じてカウントだけ増やす。
       </div>
-
-      <div class="sched-week" style="margin-top:12px;">
-        <div class="sched-week-title sw-p1">4/7–4/12（スタート週）</div>
-        <ul class="sched-items">
-          <li>コロソ講座1：2本視聴</li>
-          <li>Glyphs：週3回・1文字（数字かひらがな・15分）</li>
-          <li>制作：コロソを見た翌日に30分で模倣1個・閉じる</li>
-          <li>本：週2回20〜30分</li>
-        </ul>
-      </div>
-      <div class="sched-week">
-        <div class="sched-week-title sw-p1">4/13–4/19（継続確認週）</div>
-        <ul class="sched-items">
-          <li>4/13はジム休み → まとめて視聴日にする</li>
-          <li>コロソ講座1：2本（13日にまとめて or 週に分けて）</li>
-          <li>Glyphs：週4回へ引き上げ</li>
-          <li>制作：コロソを見たら翌日に30分模倣</li>
-
-        </ul>
-      </div>
-      <div class="sched-week">
-        <div class="sched-week-title sw-warn">4/20–4/25（旅行）⚠️ 挫折ポイント①</div>
-        <ul class="sched-items">
-          <li>4/20〜21：Glyphsと本だけでいい</li>
-          <li>4/22〜25：完全休暇・勉強ゼロでOK</li>
-        </ul>
-        <div class="sched-note">旅行は計画済み。罪悪感不要。帰国後に何回立て直せたかを数えるのが自信になる。</div>
-      </div>
-      <div class="sched-week">
-        <div class="sched-week-title sw-warn">4/26–5/2（リスタート週）← 最重要</div>
-        <ul class="sched-items">
-          <li>4/26帰国翌日：無理しない。Glyphs1文字だけでいい</li>
-          <li>コロソ講座1：2本（4/29祝日にまとめて）</li>
-          <li>Glyphs：週4回（ペース取り戻す）</li>
-          <li>制作：余裕があれば1個。なくていい</li>
-          <li>5/1帰宅 → 無理しない</li>
-        </ul>
-      </div>
-      <div class="sched-week">
-        <div class="sched-week-title sw-warn">5/3–5/5（旅行）</div>
-        <ul class="sched-items"><li>完全休み。計画済みなので罪悪感不要。</li></ul>
-      </div>
+      ${renderWeekTasks(['w1','w2','w3','w4','w5'])}
     </div>
   </div>
 
@@ -585,22 +734,7 @@ function renderRoadmap(){
           <div class="dtype-row"><span class="dtype-label">🍽 外食・社交日</span>完全オフ</div>
         </div>
       </div>
-      <div class="sched-week">
-        <div class="sched-week-title sw-p2">コロソの進め方</div>
-        <ul class="sched-items">
-          <li>講座1を週2〜3本ペースで進め、5月中旬〜下旬に完走</li>
-          <li>講座1完走後に講座2の1本目を始める</li>
-          <li>コロソを見たら当日か翌日に30分で模倣1個・閉じる</li>
-        </ul>
-      </div>
-      <div class="sched-week">
-        <div class="sched-week-title sw-p2">作品目標（最低ライン）</div>
-        <ul class="sched-items">
-          <li>5月末：累計5〜7本（ゴミでいい・模倣でいい）</li>
-          <li>6月中旬：メンターへ初見せ（12〜15本が理想）</li>
-          <li>6月末：累計12〜15本</li>
-        </ul>
-      </div>
+      ${renderWeekTasks(['w6','w7'])}
     </div>
   </div>
 
@@ -670,6 +804,8 @@ window.incGoal=incGoal;
 window.decGoal=decGoal;
 window.editTarget=editTarget;
 window.toggleSched=toggleSched;
+window.toggleTask=toggleTask;
+window.onNoteInput=onNoteInput;
 
 (async () => {
   const { data } = await sb.auth.getSession();
