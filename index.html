@@ -334,7 +334,8 @@ let state={
   user:null,
   loading:true,
   remoteUpdatedAt:null,
-  lastSavedAt:null
+  lastSavedAt:null,
+  pendingSync:false
 };
 
 const LOCAL_SNAPSHOT_PREFIX = 'design-study-app-state-v5';
@@ -382,6 +383,7 @@ function applySnapshot(snapshot){
       : { ...defaultGoal };
   });
   state.remoteUpdatedAt = snapshot?.updated_at || state.remoteUpdatedAt || null;
+  state.pendingSync = !!snapshot?.pending_sync;
   latestAppliedRemoteTime = Math.max(latestAppliedRemoteTime, timeValue(snapshot?.updated_at));
 }
 
@@ -415,17 +417,21 @@ function loadLocalSnapshot(){
   }
 }
 
-function saveLocalSnapshot(updatedAt){
-  if(!state.user) return;
-  const snapshot = {
-    data: state.data || {},
-    locked: state.locked || {},
-    tasks: state.tasks || {},
-    notes: state.notes || {}, 
-    goals: currentGoalsSnapshot(),
-    updated_at: updatedAt
-  };
-  localStorage.setItem(localKey(), JSON.stringify(snapshot));
+function saveLocalSnapshot(updatedAt, options = {}){
+  try{
+    const { pendingSync = state.pendingSync } = options;
+    localStorage.setItem(localKey(), JSON.stringify({
+      data: state.data || {},
+      locked: state.locked || {},
+      goals: currentGoalsSnapshot(),
+      tasks: state.tasks || {},
+      notes: state.notes || {},
+      updated_at: updatedAt || new Date().toISOString(),
+      pending_sync: !!pendingSync
+    }));
+  }catch(error){
+    console.warn('local save error', error);
+  }
 }
 
 function timeValue(v){
@@ -489,9 +495,13 @@ async function refreshFromRemote(opts = {}){
   const remoteRow = data && data.length ? unpackRemoteRow(data[0]) : null;
   if(!remoteRow) return false;
   const remoteTime = timeValue(remoteRow.updated_at);
+  const localSnapshot = loadLocalSnapshot();
+  const localTime = timeValue(localSnapshot?.updated_at);
+  const shouldKeepLocal = !!state.pendingSync || !!localSnapshot?.pending_sync || (localTime && localTime > remoteTime);
+  if(shouldKeepLocal) return false;
   if(!force && remoteTime && remoteTime <= latestAppliedRemoteTime) return false;
   applySnapshot(remoteRow);
-  saveLocalSnapshot(remoteRow.updated_at);
+  saveLocalSnapshot(remoteRow.updated_at, { pendingSync:false });
   if(renderAfter) render();
   return true;
 }
@@ -545,21 +555,39 @@ async function load(){
       state.notes = {};
       state.goals = defaultGoals();
       state.remoteUpdatedAt = null;
+      state.pendingSync = false;
       latestAppliedRemoteTime = 0;
     }
     return;
   }
 
   const remoteRow = data && data.length ? unpackRemoteRow(data[0]) : null;
+  const localTime = timeValue(localSnapshot?.updated_at);
+  const remoteTime = timeValue(remoteRow?.updated_at);
+
+  if(remoteRow && localSnapshot){
+    const shouldPreferLocal = !!localSnapshot.pending_sync || (localTime && localTime > remoteTime);
+    if(shouldPreferLocal){
+      applySnapshot(localSnapshot);
+      saveLocalSnapshot(localSnapshot.updated_at, { pendingSync:true });
+      await save();
+      return;
+    }
+    applySnapshot(remoteRow);
+    saveLocalSnapshot(remoteRow.updated_at, { pendingSync:false });
+    return;
+  }
 
   if(remoteRow){
     applySnapshot(remoteRow);
-    saveLocalSnapshot(remoteRow.updated_at);
+    saveLocalSnapshot(remoteRow.updated_at, { pendingSync:false });
     return;
   }
 
   if(localSnapshot){
     applySnapshot(localSnapshot);
+    state.pendingSync = true;
+    saveLocalSnapshot(localSnapshot.updated_at, { pendingSync:true });
     await save();
     return;
   }
@@ -575,27 +603,73 @@ async function load(){
 }
 
 async function save(){
-  if(!state.user) return;
+  if(!state.user) return false;
+
+  const saveId = ++saveCounter;
   const updatedAt = new Date().toISOString();
-  
-  const payload = {
-    id: state.user.id,
-    data: state.data || {},
-    locked: state.locked || {},
+  state.lastSavedAt = updatedAt;
+  state.pendingSync = true;
+  saveLocalSnapshot(updatedAt, { pendingSync:true });
+
+  const basePayload = {
+    user_id: state.user.id,
+    data: buildDataStore(),
+    locked: state.locked,
     goals: currentGoalsSnapshot(),
-    tasks: state.tasks || {},
-    notes: state.notes || {}, // ◀︎ サーバー（Supabase）への保存対象に notes を追加
     updated_at: updatedAt
   };
 
-  const { error } = await sb.from('user_data').upsert(payload);
+  const extendedPayload = {
+    ...basePayload,
+    tasks: state.tasks,
+    notes: state.notes
+  };
+
+  const exists = await hasRemoteRow();
+  let error = null;
+
+  if(exists){
+    ({ error } = await sb
+      .from('app_state')
+      .update(extendedPayload)
+      .eq('user_id', state.user.id));
+
+    if(error && /column .* does not exist/i.test(error.message || '')){
+      ({ error } = await sb
+        .from('app_state')
+        .update(basePayload)
+        .eq('user_id', state.user.id));
+    }
+  }else{
+    ({ error } = await sb
+      .from('app_state')
+      .insert(extendedPayload));
+
+    if(error && /column .* does not exist/i.test(error.message || '')){
+      ({ error } = await sb
+        .from('app_state')
+        .insert(basePayload));
+    }
+  }
+
   if(error){
     console.error('save error', error);
-  } else {
-    state.remoteUpdatedAt = updatedAt;
-    state.lastSavedAt = updatedAt;
-    saveLocalSnapshot(updatedAt);
+    saveLocalSnapshot(updatedAt, { pendingSync:true });
+    return false;
   }
+
+  state.remoteUpdatedAt = updatedAt;
+  state.pendingSync = false;
+  latestAppliedRemoteTime = Math.max(latestAppliedRemoteTime, timeValue(updatedAt));
+  saveLocalSnapshot(updatedAt, { pendingSync:false });
+
+  if(saveId === saveCounter){
+    setTimeout(() => {
+      refreshFromRemote({ force:true, renderAfter:true });
+    }, 300);
+  }
+
+  return true;
 }
 
 const daysIn=m=>new Date(2026,m,0).getDate();
@@ -649,6 +723,18 @@ function updateWeekProgress(weekId){
 
 let _noteSaveTimer = null;
 function noteKey(m,d){ return `${m}-${d}`; }
+
+function saveLocalDraftNote(m,d,val){
+  const key = noteKey(m,d);
+  if(val.trim()){
+    state.notes[key] = val;
+  } else {
+    delete state.notes[key];
+  }
+  state.lastSavedAt = new Date().toISOString();
+  state.pendingSync = true;
+  saveLocalSnapshot(state.lastSavedAt, { pendingSync:true });
+}
 function escapeHtml(str){
   return String(str ?? '')
     .replace(/&/g,'&amp;')
@@ -688,16 +774,11 @@ function onNoteInput(m,d){
   const el = document.getElementById('memo-ta');
   if(!el) return;
   const val = el.value;
+  saveLocalDraftNote(m,d,val);
   clearTimeout(_noteSaveTimer);
   const saved = document.getElementById('memo-saved');
   if(saved) saved.textContent = '保存中…';
   _noteSaveTimer = setTimeout(async ()=>{
-    const key = noteKey(m,d);
-    if(val.trim()){
-      state.notes[key] = val;
-    } else {
-      delete state.notes[key];
-    }
     await save();
     const savedEl = document.getElementById('memo-saved');
     if(savedEl){
@@ -1144,8 +1225,11 @@ window.setSelectedMemoDate=setSelectedMemoDate;
 document.addEventListener('visibilitychange', () => {
   if(state.user){
     if(document.hidden){
-      saveLocalSnapshot(state.remoteUpdatedAt || state.lastSavedAt || new Date().toISOString());
+      saveLocalSnapshot(state.remoteUpdatedAt || state.lastSavedAt || new Date().toISOString(), { pendingSync: state.pendingSync });
     }else{
+      if(state.pendingSync){
+        save();
+      }
       refreshFromRemote({ force:true, renderAfter:true });
     }
   }
@@ -1153,7 +1237,7 @@ document.addEventListener('visibilitychange', () => {
 
 window.addEventListener('beforeunload', () => {
   if(state.user){
-    saveLocalSnapshot(state.remoteUpdatedAt || state.lastSavedAt || new Date().toISOString());
+    saveLocalSnapshot(state.remoteUpdatedAt || state.lastSavedAt || new Date().toISOString(), { pendingSync: state.pendingSync });
   }
 });
 
@@ -1165,6 +1249,9 @@ window.addEventListener('beforeunload', () => {
   if(state.user){
     await load();
     startSyncWatchers();
+    if(state.pendingSync){
+      save();
+    }
     render();
   } else {
     renderAuth();
@@ -1176,6 +1263,9 @@ window.addEventListener('beforeunload', () => {
     if(state.user){
       await load();
       startSyncWatchers();
+      if(state.pendingSync){
+        save();
+      }
       render();
     } else {
       renderAuth();
