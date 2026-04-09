@@ -416,18 +416,16 @@ function loadLocalSnapshot(){
 }
 
 function saveLocalSnapshot(updatedAt){
-  try{
-    localStorage.setItem(localKey(), JSON.stringify({
-      data: state.data || {},
-      locked: state.locked || {},
-      goals: currentGoalsSnapshot(),
-      tasks: state.tasks || {},
-      notes: state.notes || {},
-      updated_at: updatedAt || new Date().toISOString()
-    }));
-  }catch(error){
-    console.warn('local save error', error);
-  }
+  if(!state.user) return;
+  const snapshot = {
+    data: state.data || {},
+    locked: state.locked || {},
+    tasks: state.tasks || {},
+    notes: state.notes || {}, 
+    goals: currentGoalsSnapshot(),
+    updated_at: updatedAt
+  };
+  localStorage.setItem(localKey(), JSON.stringify(snapshot));
 }
 
 function timeValue(v){
@@ -577,70 +575,27 @@ async function load(){
 }
 
 async function save(){
-  if(!state.user) return false;
-
-  const saveId = ++saveCounter;
+  if(!state.user) return;
   const updatedAt = new Date().toISOString();
-  state.lastSavedAt = updatedAt;
-
-  const basePayload = {
-    user_id: state.user.id,
-    data: buildDataStore(),
-    locked: state.locked,
+  
+  const payload = {
+    id: state.user.id,
+    data: state.data || {},
+    locked: state.locked || {},
     goals: currentGoalsSnapshot(),
+    tasks: state.tasks || {},
+    notes: state.notes || {}, // ◀︎ サーバー（Supabase）への保存対象に notes を追加
     updated_at: updatedAt
   };
 
-  const extendedPayload = {
-    ...basePayload,
-    tasks: state.tasks,
-    notes: state.notes
-  };
-
-  const exists = await hasRemoteRow();
-  let error = null;
-
-  if(exists){
-    ({ error } = await sb
-      .from('app_state')
-      .update(extendedPayload)
-      .eq('user_id', state.user.id));
-
-    if(error && /column .* does not exist/i.test(error.message || '')){
-      ({ error } = await sb
-        .from('app_state')
-        .update(basePayload)
-        .eq('user_id', state.user.id));
-    }
-  }else{
-    ({ error } = await sb
-      .from('app_state')
-      .insert(extendedPayload));
-
-    if(error && /column .* does not exist/i.test(error.message || '')){
-      ({ error } = await sb
-        .from('app_state')
-        .insert(basePayload));
-    }
-  }
-
+  const { error } = await sb.from('user_data').upsert(payload);
   if(error){
     console.error('save error', error);
+  } else {
+    state.remoteUpdatedAt = updatedAt;
+    state.lastSavedAt = updatedAt;
     saveLocalSnapshot(updatedAt);
-    return false;
   }
-
-  state.remoteUpdatedAt = updatedAt;
-  latestAppliedRemoteTime = Math.max(latestAppliedRemoteTime, timeValue(updatedAt));
-  saveLocalSnapshot(updatedAt);
-
-  if(saveId === saveCounter){
-    setTimeout(() => {
-      refreshFromRemote({ force:true, renderAfter:true });
-    }, 300);
-  }
-
-  return true;
 }
 
 const daysIn=m=>new Date(2026,m,0).getDate();
