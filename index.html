@@ -332,10 +332,16 @@ let state={
   notes:{},
   selectedMemo:{ month:TODAY.getMonth()+1, day:TODAY.getDate() },
   user:null,
-  loading:true
+  loading:true,
+  remoteUpdatedAt:null,
+  lastSavedAt:null
 };
 
-const LOCAL_SNAPSHOT_PREFIX = 'design-study-app-state-v4';
+const LOCAL_SNAPSHOT_PREFIX = 'design-study-app-state-v5';
+let syncChannel = null;
+let syncPollTimer = null;
+let saveCounter = 0;
+let latestAppliedRemoteTime = 0;
 
 function defaultGoals(){
   return GOALS.map(g => ({ ...g }));
@@ -375,6 +381,8 @@ function applySnapshot(snapshot){
         }
       : { ...defaultGoal };
   });
+  state.remoteUpdatedAt = snapshot?.updated_at || state.remoteUpdatedAt || null;
+  latestAppliedRemoteTime = Math.max(latestAppliedRemoteTime, timeValue(snapshot?.updated_at));
 }
 
 function unpackRemoteRow(row){
@@ -461,9 +469,67 @@ async function hasRemoteRow(){
   return !!(data && data.length);
 }
 
+function resetSyncWatchers(){
+  if(syncChannel){
+    try { sb.removeChannel(syncChannel); } catch(error){ console.warn('remove channel error', error); }
+    syncChannel = null;
+  }
+  if(syncPollTimer){
+    clearInterval(syncPollTimer);
+    syncPollTimer = null;
+  }
+}
+
+async function refreshFromRemote(opts = {}){
+  if(!state.user) return false;
+  const { force = false, renderAfter = true } = opts;
+  const { data, error } = await fetchLatestRemoteRow();
+  if(error){
+    console.error('refresh error', error);
+    return false;
+  }
+  const remoteRow = data && data.length ? unpackRemoteRow(data[0]) : null;
+  if(!remoteRow) return false;
+  const remoteTime = timeValue(remoteRow.updated_at);
+  if(!force && remoteTime && remoteTime <= latestAppliedRemoteTime) return false;
+  applySnapshot(remoteRow);
+  saveLocalSnapshot(remoteRow.updated_at);
+  if(renderAfter) render();
+  return true;
+}
+
+function startSyncWatchers(){
+  resetSyncWatchers();
+  if(!state.user) return;
+
+  syncChannel = sb
+    .channel('app_state_sync_' + state.user.id)
+    .on('postgres_changes', {
+      event: '*',
+      schema: 'public',
+      table: 'app_state',
+      filter: 'user_id=eq.' + state.user.id
+    }, () => {
+      refreshFromRemote({ force:true, renderAfter:true });
+    })
+    .subscribe((status) => {
+      if(status === 'CHANNEL_ERROR'){
+        console.warn('realtime subscribe error');
+      }
+    });
+
+  syncPollTimer = setInterval(() => {
+    if(!document.hidden){
+      refreshFromRemote({ force:false, renderAfter:true });
+    }
+  }, 15000);
+}
+
 async function load(){
   if(!state.user){
     state.goals = defaultGoals();
+    state.remoteUpdatedAt = null;
+    latestAppliedRemoteTime = 0;
     return;
   }
 
@@ -480,13 +546,15 @@ async function load(){
       state.tasks = {};
       state.notes = {};
       state.goals = defaultGoals();
+      state.remoteUpdatedAt = null;
+      latestAppliedRemoteTime = 0;
     }
     return;
   }
 
   const remoteRow = data && data.length ? unpackRemoteRow(data[0]) : null;
 
-  if(remoteRow && (!localSnapshot || timeValue(remoteRow.updated_at) >= timeValue(localSnapshot.updated_at))){
+  if(remoteRow){
     applySnapshot(remoteRow);
     saveLocalSnapshot(remoteRow.updated_at);
     return;
@@ -503,14 +571,17 @@ async function load(){
   state.tasks = {};
   state.notes = {};
   state.goals = defaultGoals();
+  state.remoteUpdatedAt = null;
+  latestAppliedRemoteTime = 0;
   await save();
 }
 
 async function save(){
-  if(!state.user) return;
+  if(!state.user) return false;
 
+  const saveId = ++saveCounter;
   const updatedAt = new Date().toISOString();
-  saveLocalSnapshot(updatedAt);
+  state.lastSavedAt = updatedAt;
 
   const basePayload = {
     user_id: state.user.id,
@@ -555,7 +626,21 @@ async function save(){
 
   if(error){
     console.error('save error', error);
+    saveLocalSnapshot(updatedAt);
+    return false;
   }
+
+  state.remoteUpdatedAt = updatedAt;
+  latestAppliedRemoteTime = Math.max(latestAppliedRemoteTime, timeValue(updatedAt));
+  saveLocalSnapshot(updatedAt);
+
+  if(saveId === saveCounter){
+    setTimeout(() => {
+      refreshFromRemote({ force:true, renderAfter:true });
+    }, 300);
+  }
+
+  return true;
 }
 
 const daysIn=m=>new Date(2026,m,0).getDate();
@@ -845,15 +930,21 @@ async function signIn(){
 
   state.user = data.user;
   await load();
+  startSyncWatchers();
   render();
 }
 
 async function signOutUser(){
+  resetSyncWatchers();
   await sb.auth.signOut();
   state.user = null;
   state.data = {};
   state.locked = {};
+  state.tasks = {};
+  state.notes = {};
   state.goals = [];
+  state.remoteUpdatedAt = null;
+  latestAppliedRemoteTime = 0;
   renderAuth();
 }
 
@@ -1096,14 +1187,18 @@ window.onNoteInput=onNoteInput;
 window.setSelectedMemoDate=setSelectedMemoDate;
 
 document.addEventListener('visibilitychange', () => {
-  if(document.hidden && state.user){
-    saveLocalSnapshot();
+  if(state.user){
+    if(document.hidden){
+      saveLocalSnapshot(state.remoteUpdatedAt || state.lastSavedAt || new Date().toISOString());
+    }else{
+      refreshFromRemote({ force:true, renderAfter:true });
+    }
   }
 });
 
 window.addEventListener('beforeunload', () => {
   if(state.user){
-    saveLocalSnapshot();
+    saveLocalSnapshot(state.remoteUpdatedAt || state.lastSavedAt || new Date().toISOString());
   }
 });
 
@@ -1114,15 +1209,18 @@ window.addEventListener('beforeunload', () => {
 
   if(state.user){
     await load();
+    startSyncWatchers();
     render();
   } else {
     renderAuth();
   }
 
   sb.auth.onAuthStateChange(async (_event, session) => {
+    resetSyncWatchers();
     state.user = session?.user ?? null;
     if(state.user){
       await load();
+      startSyncWatchers();
       render();
     } else {
       renderAuth();
