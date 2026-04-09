@@ -335,65 +335,223 @@ let state={
   loading:true
 };
 
+const LOCAL_SNAPSHOT_PREFIX = 'design-study-app-state-v4';
+
+function defaultGoals(){
+  return GOALS.map(g => ({ ...g }));
+}
+
+function currentGoalsSnapshot(){
+  return state.goals.map(g => ({
+    id: g.id,
+    current: g.current,
+    target: g.target
+  }));
+}
+
+function buildDataStore(){
+  return {
+    __appStore: {
+      version: 4,
+      habits: state.data || {},
+      tasks: state.tasks || {},
+      notes: state.notes || {}
+    }
+  };
+}
+
+function applySnapshot(snapshot){
+  state.data = snapshot?.data || {};
+  state.locked = snapshot?.locked || {};
+  state.tasks = snapshot?.tasks || {};
+  state.notes = snapshot?.notes || {};
+  state.goals = GOALS.map(defaultGoal => {
+    const savedGoal = (snapshot?.goals || []).find(g => g.id === defaultGoal.id);
+    return savedGoal
+      ? {
+          ...defaultGoal,
+          current: Number(savedGoal.current) || 0,
+          target: Number(savedGoal.target) || defaultGoal.target
+        }
+      : { ...defaultGoal };
+  });
+}
+
+function unpackRemoteRow(row){
+  const rawData = row?.data || {};
+  const store = rawData && typeof rawData === 'object' ? rawData.__appStore : null;
+  const habits = store ? (store.habits || {}) : (rawData || {});
+  const tasks = (row && typeof row.tasks === 'object' && row.tasks) || (store ? (store.tasks || {}) : {});
+  const notes = (row && typeof row.notes === 'object' && row.notes) || (store ? (store.notes || {}) : {});
+  return {
+    data: habits,
+    locked: row?.locked || {},
+    goals: row?.goals || [],
+    tasks,
+    notes,
+    updated_at: row?.updated_at || null
+  };
+}
+
+function localKey(){
+  return state.user ? `${LOCAL_SNAPSHOT_PREFIX}:${state.user.id}` : `${LOCAL_SNAPSHOT_PREFIX}:guest`;
+}
+
+function loadLocalSnapshot(){
+  try{
+    const raw = localStorage.getItem(localKey());
+    return raw ? JSON.parse(raw) : null;
+  }catch(error){
+    console.warn('local load error', error);
+    return null;
+  }
+}
+
+function saveLocalSnapshot(updatedAt){
+  try{
+    localStorage.setItem(localKey(), JSON.stringify({
+      data: state.data || {},
+      locked: state.locked || {},
+      goals: currentGoalsSnapshot(),
+      tasks: state.tasks || {},
+      notes: state.notes || {},
+      updated_at: updatedAt || new Date().toISOString()
+    }));
+  }catch(error){
+    console.warn('local save error', error);
+  }
+}
+
+function timeValue(v){
+  const t = Date.parse(v || '');
+  return Number.isFinite(t) ? t : 0;
+}
+
+async function fetchLatestRemoteRow(){
+  let res = await sb
+    .from('app_state')
+    .select('data, locked, goals, tasks, notes, updated_at')
+    .eq('user_id', state.user.id)
+    .order('updated_at', { ascending:false })
+    .limit(1);
+
+  if(res.error && /column .* does not exist/i.test(res.error.message || '')){
+    res = await sb
+      .from('app_state')
+      .select('data, locked, goals, updated_at')
+      .eq('user_id', state.user.id)
+      .order('updated_at', { ascending:false })
+      .limit(1);
+  }
+
+  return res;
+}
+
+async function hasRemoteRow(){
+  const { data, error } = await sb
+    .from('app_state')
+    .select('user_id')
+    .eq('user_id', state.user.id)
+    .limit(1);
+
+  if(error){
+    console.error('existence check error', error);
+    return false;
+  }
+  return !!(data && data.length);
+}
+
 async function load(){
   if(!state.user){
-    state.goals = GOALS.map(g => ({ ...g }));
+    state.goals = defaultGoals();
     return;
   }
 
-  const { data, error } = await sb
-    .from('app_state')
-    .select('data, locked, goals, tasks, notes')
-    .eq('user_id', state.user.id)
-    .maybeSingle();
+  const localSnapshot = loadLocalSnapshot();
+  const { data, error } = await fetchLatestRemoteRow();
 
   if(error){
     console.error('load error', error);
-    state.goals = GOALS.map(g => ({ ...g }));
+    if(localSnapshot){
+      applySnapshot(localSnapshot);
+    }else{
+      state.data = {};
+      state.locked = {};
+      state.tasks = {};
+      state.notes = {};
+      state.goals = defaultGoals();
+    }
     return;
   }
 
-  if(data){
-    state.data = data.data || {};
-    state.locked = data.locked || {};
-    state.tasks = data.tasks || {};
-    state.notes = data.notes || {};
-    state.goals = GOALS.map(defaultGoal => {
-      const savedGoal = (data.goals || []).find(g => g.id === defaultGoal.id);
-      return savedGoal
-        ? { ...defaultGoal, current: savedGoal.current, target: savedGoal.target }
-        : { ...defaultGoal };
-    });
-  } else {
-    state.data = {};
-    state.locked = {};
-    state.tasks = {};
-    state.notes = {};
-    state.goals = GOALS.map(g => ({ ...g }));
-    await save();
+  const remoteRow = data && data.length ? unpackRemoteRow(data[0]) : null;
+
+  if(remoteRow && (!localSnapshot || timeValue(remoteRow.updated_at) >= timeValue(localSnapshot.updated_at))){
+    applySnapshot(remoteRow);
+    saveLocalSnapshot(remoteRow.updated_at);
+    return;
   }
+
+  if(localSnapshot){
+    applySnapshot(localSnapshot);
+    await save();
+    return;
+  }
+
+  state.data = {};
+  state.locked = {};
+  state.tasks = {};
+  state.notes = {};
+  state.goals = defaultGoals();
+  await save();
 }
 
 async function save(){
   if(!state.user) return;
 
-  const payload = {
+  const updatedAt = new Date().toISOString();
+  saveLocalSnapshot(updatedAt);
+
+  const basePayload = {
     user_id: state.user.id,
-    data: state.data,
+    data: buildDataStore(),
     locked: state.locked,
-    goals: state.goals.map(g => ({
-      id: g.id,
-      current: g.current,
-      target: g.target
-    })),
-    tasks: state.tasks,
-    notes: state.notes,
-    updated_at: new Date().toISOString()
+    goals: currentGoalsSnapshot(),
+    updated_at: updatedAt
   };
 
-  const { error } = await sb
-    .from('app_state')
-    .upsert(payload);
+  const extendedPayload = {
+    ...basePayload,
+    tasks: state.tasks,
+    notes: state.notes
+  };
+
+  const exists = await hasRemoteRow();
+  let error = null;
+
+  if(exists){
+    ({ error } = await sb
+      .from('app_state')
+      .update(extendedPayload)
+      .eq('user_id', state.user.id));
+
+    if(error && /column .* does not exist/i.test(error.message || '')){
+      ({ error } = await sb
+        .from('app_state')
+        .update(basePayload)
+        .eq('user_id', state.user.id));
+    }
+  }else{
+    ({ error } = await sb
+      .from('app_state')
+      .insert(extendedPayload));
+
+    if(error && /column .* does not exist/i.test(error.message || '')){
+      ({ error } = await sb
+        .from('app_state')
+        .insert(basePayload));
+    }
+  }
 
   if(error){
     console.error('save error', error);
@@ -411,18 +569,18 @@ const sp=(m,d)=>SP[`2026-${m}-${d}`]||null;
 function isLocked(m,d){if(state.locked[`2026-${m}-${d}`])return true;const s=sp(m,d);return s&&(s.type==='travel'||s.type==='nostudy');}
 const hk=(id,m,d)=>`${id}-${m}-${d}`;
 const isDone=(id,m,d)=>!!state.data[hk(id,m,d)];
-function toggleHabit(e,id,m,d){if(e)e.stopPropagation();if(isLocked(m,d))return;state.data[hk(id,m,d)]=!state.data[hk(id,m,d)];save();render();}
-function toggleLock(e,m,d){if(e)e.stopPropagation();const s=sp(m,d);if(s&&(s.type==='travel'||s.type==='nostudy'))return;state.locked[`2026-${m}-${d}`]=!state.locked[`2026-${m}-${d}`];save();render();}
+async function toggleHabit(e,id,m,d){if(e)e.stopPropagation();if(isLocked(m,d))return;state.data[hk(id,m,d)]=!state.data[hk(id,m,d)];await save();render();}
+async function toggleLock(e,m,d){if(e)e.stopPropagation();const s=sp(m,d);if(s&&(s.type==='travel'||s.type==='nostudy'))return;state.locked[`2026-${m}-${d}`]=!state.locked[`2026-${m}-${d}`];await save();render();}
 function habitPct(id){let done=0,total=0;for(let m=4;m<=5;m++)for(let d=1;d<=daysIn(m);d++){if(isLocked(m,d)||isFut(m,d))continue;if(m===4&&d<7)continue;total++;if(isDone(id,m,d))done++;}return total>0?Math.round(done/total*100):0;}
 function habitOverallPct(){return Math.round(HABITS.reduce((a,h)=>a+habitPct(h.id),0)/HABITS.length);}
 function streak(){let s=0;const d=new Date(TODAY);for(let i=0;i<90;i++){const m=d.getMonth()+1,day=d.getDate();if(!isLocked(m,day)){if(!HABITS.some(h=>isDone(h.id,m,day)))break;s++;}d.setDate(d.getDate()-1);}return s;}
 function goalOverallPct(){if(!state.goals.length)return 0;return Math.round(state.goals.reduce((a,g)=>a+Math.min(Math.round(g.current/g.target*100),100),0)/state.goals.length);}
-function incGoal(id){const g=state.goals.find(g=>g.id===id);if(g){g.current=Math.min(g.current+1,g.target+50);save();render();}}
-function decGoal(id){const g=state.goals.find(g=>g.id===id);if(g&&g.current>0){g.current--;save();render();}}
-function editTarget(id){const g=state.goals.find(g=>g.id===id);if(!g)return;const val=prompt(`「${g.label}」の目標数（現在:${g.target}${g.unit}）\n変更するとロードマップのバーも変わります`,g.target);if(val!==null){const n=parseInt(val);if(!isNaN(n)&&n>0){g.target=n;save();render();}}}
-function toggleTask(id){
+async function incGoal(id){const g=state.goals.find(g=>g.id===id);if(g){g.current=Math.min(g.current+1,g.target+50);await save();render();}}
+async function decGoal(id){const g=state.goals.find(g=>g.id===id);if(g&&g.current>0){g.current--;await save();render();}}
+async function editTarget(id){const g=state.goals.find(g=>g.id===id);if(!g)return;const val=prompt(`「${g.label}」の目標数（現在:${g.target}${g.unit}）\n変更するとロードマップのバーも変わります`,g.target);if(val!==null){const n=parseInt(val);if(!isNaN(n)&&n>0){g.target=n;await save();render();}}}
+async function toggleTask(id){
   state.tasks[id] = !state.tasks[id];
-  save();
+  await save();
   // Re-render only the schedule without full page re-render for snappiness
   const el = document.getElementById('task-'+id);
   if(el){
@@ -493,14 +651,14 @@ function onNoteInput(m,d){
   clearTimeout(_noteSaveTimer);
   const saved = document.getElementById('memo-saved');
   if(saved) saved.textContent = '保存中…';
-  _noteSaveTimer = setTimeout(()=>{
+  _noteSaveTimer = setTimeout(async ()=>{
     const key = noteKey(m,d);
     if(val.trim()){
       state.notes[key] = val;
     } else {
       delete state.notes[key];
     }
-    save();
+    await save();
     const savedEl = document.getElementById('memo-saved');
     if(savedEl){
       savedEl.textContent='保存しました ✓';
@@ -936,6 +1094,19 @@ window.toggleSched=toggleSched;
 window.toggleTask=toggleTask;
 window.onNoteInput=onNoteInput;
 window.setSelectedMemoDate=setSelectedMemoDate;
+
+document.addEventListener('visibilitychange', () => {
+  if(document.hidden && state.user){
+    saveLocalSnapshot();
+  }
+});
+
+window.addEventListener('beforeunload', () => {
+  if(state.user){
+    saveLocalSnapshot();
+  }
+});
+
 
 (async () => {
   const { data } = await sb.auth.getSession();
